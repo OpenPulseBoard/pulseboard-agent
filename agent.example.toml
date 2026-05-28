@@ -1,0 +1,77 @@
+# PulseAgent configuration — copy to /etc/pulseagent/agent.toml and edit
+
+[agent]
+# Where agent state (credentials, offsets) is stored
+data_dir       = "/var/lib/pulseagent"
+log_level      = "info"
+
+# The PulseBoard workspace to ship data to
+pulseboard_url = "https://your-workspace.pulseboard.cloud"
+
+# Enrolment token from the portal (Settings → Agents → Generate token).
+# Once enrolled the agent stores a long-lived key in data_dir and this
+# field is no longer required.
+enroll_token   = "paste-token-from-portal-here"
+
+# Optional: override the instance name shown in the portal
+# instance_name = "web-01"
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+
+[sources.host_metrics]
+# Collect CPU, memory, disk, network and load average every 15 seconds
+interval   = "15s"
+collectors = ["cpu", "memory", "disk", "network", "load"]
+# extra_labels = { env = "prod" }
+
+# Tail one or more log files (glob patterns supported)
+[[sources.file_logs]]
+name  = "app"
+paths = ["/var/log/app/*.log", "/var/log/app/**/*.log"]
+# multiline_start = "^\\d{4}-\\d{2}-\\d{2}"  # regex to detect start of a new logical line
+# extra_labels = { service = "my-app" }
+
+# Scrape a Prometheus /metrics endpoint
+# [[sources.prom_scrape]]
+# name     = "nginx"
+# url      = "http://localhost:9113/metrics"
+# interval = "30s"
+# extra_labels = { instance = "web-01" }
+
+# Receive OTLP over HTTP on localhost (optional)
+# [sources.otlp]
+# port = 4318
+
+# ---------------------------------------------------------------------------
+# Processors
+# ---------------------------------------------------------------------------
+
+[processors.batch]
+max_size  = 1000
+max_delay = "5s"
+
+# Cardinality guard — protect against label explosions
+[processors.cardinality_guard]
+max_series_per_metric = 2000
+
+# Drop the "go_" runtime metrics emitted by Prometheus exporters (optional)
+# [[processors.relabel]]
+# source_labels = ["__name__"]
+# regex         = "^go_.*"
+# action        = "drop"
+
+# Redact email addresses from log lines (optional)
+# [[processors.redact_pii]]
+# field   = "line"
+# pattern = "[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"
+
+# ---------------------------------------------------------------------------
+# Target
+# ---------------------------------------------------------------------------
+
+[targets.pulseboard]
+# The target URL is derived from agent.pulseboard_url by default.
+# Override here only if you need to ship to a different endpoint.
+# url = "https://your-workspace.pulseboard.cloud"

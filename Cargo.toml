@@ -1,0 +1,66 @@
+[package]
+name        = "pulseagent"
+version     = "0.1.0"
+edition     = "2021"
+description = "PulseBoard telemetry agent — zero-config host metrics, logs, and traces"
+license     = "MIT"
+repository  = "https://github.com/pulseboard/pulseboard-agent"
+keywords    = ["observability", "metrics", "logs", "opentelemetry", "prometheus"]
+categories  = ["command-line-utilities", "development-tools::profiling"]
+default-run = "pulseagent"
+
+[[bin]]
+name = "pulseagent"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio       = { version = "1", features = ["full"] }
+tokio-util  = { version = "0.7", features = ["io"] }
+
+# Web UI + OTLP HTTP receiver
+axum        = "0.7"
+tower       = "0.4"
+tower-http  = { version = "0.5", features = ["cors", "fs"] }
+
+# Serialisation
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+toml        = "0.8"
+
+# HTTP client (reqwest with rustls — no OpenSSL dep)
+reqwest     = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
+
+# System metrics (cross-platform: Linux, macOS, Windows)
+sysinfo     = "0.30"
+
+# Structured logging
+tracing             = "0.1"
+tracing-subscriber  = { version = "0.3", features = ["env-filter", "json"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Utilities
+anyhow   = "1"
+chrono   = { version = "0.4", features = ["serde"] }
+uuid     = { version = "1", features = ["v4"] }
+dashmap  = "5"
+regex    = "1"
+bytes    = "1"
+hostname = "0.4"
+
+# Prometheus text format parsing (for prometheus_scrape source)
+prometheus-parse = "0.2"
+
+# Glob for file_logs path expansion
+glob = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+opt-level = 3
+lto       = true
+strip     = true
+codegen-units = 1
