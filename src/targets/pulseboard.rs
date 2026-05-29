@@ -63,7 +63,7 @@ impl PulseBoardTarget {
             .json(&payload)
             .send()
             .await
-            .with_context(|| format!("POST {}", url))?;
+            .with_context(|| format!("POST {url}"))?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -94,7 +94,7 @@ impl PulseBoardTarget {
             .json(&payload)
             .send()
             .await
-            .with_context(|| format!("POST {}", url))?;
+            .with_context(|| format!("POST {url}"))?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -199,7 +199,7 @@ fn build_loki_push(logs: &[LogEntry]) -> Value {
         kv.sort_by_key(|(k, _)| k.as_str());
         let key = kv
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
+            .map(|(k, v)| format!("{k}={v}"))
             .collect::<Vec<_>>()
             .join(",");
         streams.entry(key).or_default().push(entry);

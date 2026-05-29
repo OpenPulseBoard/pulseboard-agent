@@ -101,12 +101,12 @@ async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials>
         .json(&body)
         .send()
         .await
-        .with_context(|| format!("POST {}", url))?;
+        .with_context(|| format!("POST {url}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        anyhow::bail!("enroll failed HTTP {}: {}", status, text);
+        anyhow::bail!("enroll failed HTTP {status}: {text}");
     }
 
     let json: serde_json::Value = resp.json().await.context("parse enroll response")?;
@@ -153,7 +153,7 @@ pub async fn checkin(
         .json(&body)
         .send()
         .await
-        .with_context(|| format!("POST {}", url))?;
+        .with_context(|| format!("POST {url}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -175,9 +175,9 @@ fn load_creds(path: &Path) -> Result<AgentCredentials> {
 
 fn persist_creds(path: &Path, creds: &AgentCredentials) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("create {:?}", parent))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
     }
     let raw = serde_json::to_string_pretty(creds)?;
-    std::fs::write(path, raw).with_context(|| format!("write {:?}", path))?;
+    std::fs::write(path, raw).with_context(|| format!("write {path:?}"))?;
     Ok(())
 }

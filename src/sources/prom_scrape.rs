@@ -63,7 +63,7 @@ async fn scrape(
 
 fn parse_prometheus_text(text: &str, extra: &HashMap<String, String>) -> Result<Vec<MetricSample>> {
     let lines = prometheus_parse::Scrape::parse(text.lines().map(|s| Ok(s.to_owned())))
-        .map_err(|e| anyhow::anyhow!("prometheus parse error: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("prometheus parse error: {e}"))?;
 
     let mut samples = vec![];
     for sample in lines.samples {

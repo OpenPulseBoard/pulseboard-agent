@@ -265,12 +265,12 @@ pub fn load(path: &Path) -> Result<Config> {
         });
     }
 
-    let raw = std::fs::read_to_string(path).with_context(|| format!("reading {:?}", path))?;
+    let raw = std::fs::read_to_string(path).with_context(|| format!("reading {path:?}"))?;
 
     // Perform ${env:VAR} expansion before parsing TOML
     let expanded = expand_env_vars(&raw);
 
-    let cfg: Config = toml::from_str(&expanded).with_context(|| format!("parsing {:?}", path))?;
+    let cfg: Config = toml::from_str(&expanded).with_context(|| format!("parsing {path:?}"))?;
 
     validate(&cfg)?;
     Ok(cfg)
@@ -319,25 +319,25 @@ pub fn parse_duration_secs(s: &str) -> Result<u64> {
         return n
             .trim()
             .parse::<u64>()
-            .with_context(|| format!("bad duration {:?}", s));
+            .with_context(|| format!("bad duration {s:?}"));
     }
     if let Some(n) = s.strip_suffix('m') {
         return Ok(n
             .trim()
             .parse::<u64>()
-            .with_context(|| format!("bad duration {:?}", s))?
+            .with_context(|| format!("bad duration {s:?}"))?
             * 60);
     }
     if let Some(n) = s.strip_suffix('h') {
         return Ok(n
             .trim()
             .parse::<u64>()
-            .with_context(|| format!("bad duration {:?}", s))?
+            .with_context(|| format!("bad duration {s:?}"))?
             * 3600);
     }
     // Plain integer = seconds
     s.parse::<u64>()
-        .with_context(|| format!("bad duration {:?}", s))
+        .with_context(|| format!("bad duration {s:?}"))
 }
 
 // ---------------------------------------------------------------------------

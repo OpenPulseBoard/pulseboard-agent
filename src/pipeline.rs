@@ -157,7 +157,7 @@ pub async fn run(
             let n = batch.len();
             if dry_run {
                 for s in &batch {
-                    println!("{:?}", s);
+                    println!("{s:?}");
                 }
             } else if let Some(ref t) = target {
                 match t.flush(batch).await {
@@ -173,7 +173,7 @@ pub async fn run(
         let n = batch.len();
         if dry_run {
             for s in &batch {
-                println!("{:?}", s);
+                println!("{s:?}");
             }
         } else if let Some(ref t) = target {
             if let Err(e) = t.flush(batch).await {
