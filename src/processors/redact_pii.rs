@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use regex::Regex;
 
 use crate::config::RedactPiiRule;

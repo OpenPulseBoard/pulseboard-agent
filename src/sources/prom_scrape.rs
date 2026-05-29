@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 use crate::config::{parse_duration_secs, PromScrapeConfig};
-use crate::signal::{now_ms, Labels, MetricKind, MetricSample, Signal};
+use crate::signal::{Labels, MetricKind, MetricSample, Signal};
 use crate::web::Inspector;
 
 pub struct PromScrapeSource {
@@ -26,9 +26,8 @@ impl PromScrapeSource {
 
         loop {
             ticker.tick().await;
-            let ts = now_ms();
 
-            match scrape(&client, &self.cfg.url, ts, &self.cfg.extra_labels).await {
+            match scrape(&client, &self.cfg.url, &self.cfg.extra_labels).await {
                 Ok(samples) => {
                     for s in samples {
                         inspector.record_source(&self.cfg.name, "metric");
@@ -49,7 +48,6 @@ impl PromScrapeSource {
 async fn scrape(
     client: &reqwest::Client,
     url: &str,
-    ts: i64,
     extra: &HashMap<String, String>,
 ) -> Result<Vec<MetricSample>> {
     let text = client
@@ -60,12 +58,11 @@ async fn scrape(
         .text()
         .await?;
 
-    parse_prometheus_text(&text, ts, extra)
+    parse_prometheus_text(&text, extra)
 }
 
 fn parse_prometheus_text(
     text: &str,
-    ts: i64,
     extra: &HashMap<String, String>,
 ) -> Result<Vec<MetricSample>> {
     let lines = prometheus_parse::Scrape::parse(text.lines().map(|s| Ok(s.to_owned())))

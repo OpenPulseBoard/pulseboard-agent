@@ -10,6 +10,7 @@ use crate::signal::{LogEntry, MetricKind, MetricSample, Signal};
 pub struct PulseBoardTarget {
     creds: AgentCredentials,
     client: reqwest::Client,
+    #[allow(dead_code)]
     cfg: Option<PulseBoardTargetConfig>,
 }
 
@@ -138,7 +139,7 @@ fn build_otlp_metrics(metrics: &[MetricSample]) -> Value {
                         })
                         .collect();
 
-                    let time_ns = p.timestamp_ms as i64 * 1_000_000;
+                    let time_ns = p.timestamp_ms * 1_000_000;
                     json!({
                         "attributes":   attrs,
                         "timeUnixNano": time_ns.to_string(),
@@ -205,8 +206,8 @@ fn build_loki_push(logs: &[LogEntry]) -> Value {
     }
 
     let stream_objs: Vec<Value> = streams
-        .into_iter()
-        .map(|(_, entries)| {
+        .into_values()
+        .map(|entries| {
             let labels: std::collections::HashMap<String, String> = entries[0].labels.clone();
             let values: Vec<Value> = entries
                 .iter()

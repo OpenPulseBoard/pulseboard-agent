@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
@@ -151,7 +151,7 @@ fn expand_globs(patterns: &[String]) -> Vec<PathBuf> {
 
 fn make_entry(
     line: &str,
-    path: &PathBuf,
+    path: &Path,
     source: &str,
     extra: &HashMap<String, String>,
 ) -> LogEntry {

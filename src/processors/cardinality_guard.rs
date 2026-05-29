@@ -53,6 +53,7 @@ impl CardinalityGuard {
     }
 
     /// Current series count for a metric (for inspector / debug UI)
+    #[allow(dead_code)]
     pub fn series_count(&self, metric_name: &str) -> usize {
         self.series.get(metric_name).map(|e| e.len()).unwrap_or(0)
     }
