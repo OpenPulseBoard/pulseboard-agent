@@ -66,7 +66,9 @@ impl Default for AgentConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SourcesConfig {
     pub host_metrics: Option<HostMetricsConfig>,
+    #[serde(default)]
     pub file_logs: Vec<FileLogsConfig>,
+    #[serde(default)]
     pub prom_scrape: Vec<PromScrapeConfig>,
     /// Stub — OTLP HTTP/JSON receiver on a local port
     pub otlp: Option<OtlpConfig>,
@@ -336,4 +338,157 @@ pub fn parse_duration_secs(s: &str) -> Result<u64> {
     // Plain integer = seconds
     s.parse::<u64>()
         .with_context(|| format!("bad duration {:?}", s))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(toml: &str) -> Config {
+        toml::from_str(toml).expect("TOML parse failed")
+    }
+
+    // Regression: config with only [sources.host_metrics] (no file_logs /
+    // prom_scrape entries) must not fail with "missing field `file_logs`".
+    #[test]
+    fn host_metrics_only_no_file_logs() {
+        let cfg = parse(
+            r#"
+[sources.host_metrics]
+interval = "15s"
+"#,
+        );
+        assert!(cfg.sources.host_metrics.is_some());
+        assert!(cfg.sources.file_logs.is_empty());
+        assert!(cfg.sources.prom_scrape.is_empty());
+    }
+
+    // Completely empty TOML should give back all-default values.
+    #[test]
+    fn empty_toml_uses_defaults() {
+        let cfg = parse("");
+        assert_eq!(cfg.agent.log_level, "info");
+        assert!(cfg.sources.host_metrics.is_none());
+        assert!(cfg.sources.file_logs.is_empty());
+        assert!(cfg.sources.prom_scrape.is_empty());
+        assert_eq!(cfg.processors.batch.max_size, 1000);
+        assert_eq!(cfg.processors.batch.max_delay, "5s");
+    }
+
+    // Multiple [[sources.file_logs]] entries should all be collected.
+    #[test]
+    fn multiple_file_logs_entries() {
+        let cfg = parse(
+            r#"
+[[sources.file_logs]]
+name  = "app"
+paths = ["/var/log/app/*.log"]
+
+[[sources.file_logs]]
+name  = "nginx"
+paths = ["/var/log/nginx/access.log"]
+"#,
+        );
+        assert_eq!(cfg.sources.file_logs.len(), 2);
+        assert_eq!(cfg.sources.file_logs[0].name, "app");
+        assert_eq!(cfg.sources.file_logs[1].name, "nginx");
+    }
+
+    // [[sources.prom_scrape]] should apply the default interval when omitted.
+    #[test]
+    fn prom_scrape_default_interval() {
+        let cfg = parse(
+            r#"
+[[sources.prom_scrape]]
+name = "node"
+url  = "http://localhost:9100/metrics"
+"#,
+        );
+        assert_eq!(cfg.sources.prom_scrape[0].interval, "30s");
+    }
+
+    // Full realistic config (mirrors agent.example.toml) should parse cleanly.
+    #[test]
+    fn full_example_config_parses() {
+        let cfg = parse(
+            r#"
+[agent]
+data_dir       = "/var/lib/pulseagent"
+log_level      = "info"
+pulseboard_url = "https://acme.pulseboard.cloud"
+enroll_token   = "tok_test"
+
+[sources.host_metrics]
+interval   = "15s"
+collectors = ["cpu", "memory", "disk", "network", "load"]
+
+[[sources.file_logs]]
+name  = "app"
+paths = ["/var/log/app/*.log"]
+
+[[sources.prom_scrape]]
+name     = "nginx"
+url      = "http://localhost:9113/metrics"
+interval = "30s"
+
+[processors.batch]
+max_size  = 500
+max_delay = "10s"
+
+[processors.cardinality_guard]
+max_series_per_metric = 1000
+
+[targets.pulseboard]
+url = "https://acme.pulseboard.cloud"
+"#,
+        );
+        assert_eq!(cfg.agent.log_level, "info");
+        assert_eq!(cfg.sources.host_metrics.unwrap().collectors.len(), 5);
+        assert_eq!(cfg.sources.file_logs.len(), 1);
+        assert_eq!(cfg.sources.prom_scrape.len(), 1);
+        assert_eq!(cfg.processors.batch.max_size, 500);
+        assert_eq!(
+            cfg.processors.cardinality_guard.unwrap().max_series_per_metric,
+            1000
+        );
+        assert!(cfg.targets.pulseboard.is_some());
+    }
+
+    // env-var expansion replaces ${env:VAR} tokens.
+    #[test]
+    fn env_var_expansion() {
+        std::env::set_var("TEST_PULSE_TOKEN", "secret123");
+        let expanded = expand_env_vars(
+            r#"enroll_token = "${env:TEST_PULSE_TOKEN}""#,
+        );
+        assert!(expanded.contains("secret123"));
+        std::env::remove_var("TEST_PULSE_TOKEN");
+    }
+
+    // Unset env var should expand to empty string, not leave the placeholder.
+    #[test]
+    fn env_var_expansion_missing_var_becomes_empty() {
+        std::env::remove_var("__PULSE_UNSET_VAR__");
+        let expanded = expand_env_vars("url = \"${env:__PULSE_UNSET_VAR__}\"");
+        assert!(!expanded.contains("${env:"));
+    }
+
+    // parse_duration_secs unit tests.
+    #[test]
+    fn parse_duration_seconds() {
+        assert_eq!(parse_duration_secs("15s").unwrap(), 15);
+        assert_eq!(parse_duration_secs("2m").unwrap(), 120);
+        assert_eq!(parse_duration_secs("1h").unwrap(), 3600);
+        assert_eq!(parse_duration_secs("60").unwrap(), 60);
+    }
+
+    #[test]
+    fn parse_duration_invalid_returns_err() {
+        assert!(parse_duration_secs("abc").is_err());
+        assert!(parse_duration_secs("").is_err());
+    }
 }
