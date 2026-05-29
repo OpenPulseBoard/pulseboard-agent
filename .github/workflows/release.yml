@@ -1,0 +1,171 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # e.g. v0.1.0, v1.2.3
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist, e.g. v0.1.0)'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# ---------------------------------------------------------------------------
+# Build job — one runner per target, artifacts uploaded for the release job
+# ---------------------------------------------------------------------------
+jobs:
+  build:
+    name: Build · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux — cross-compiled to musl for maximum portability
+          # (no libc dependency; runs on any distro including Alpine/containers)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            use_cross: true
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            use_cross: true
+
+          # macOS — native builds on the matching runner architecture
+          - target: x86_64-apple-darwin
+            os: macos-13           # Intel runner
+            use_cross: false
+
+          - target: aarch64-apple-darwin
+            os: macos-latest       # Apple Silicon runner (macos-14+)
+            use_cross: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      # cross is the easiest way to produce musl binaries on a standard
+      # ubuntu runner; it runs the actual compilation inside a Docker
+      # container that has the right cross toolchain pre-installed.
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build (cross)
+        if: matrix.use_cross
+        run: cross build --release --locked --target ${{ matrix.target }}
+
+      - name: Build (cargo)
+        if: '!matrix.use_cross'
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # Produce pulseagent-{target}.tar.gz  — the exact filename that
+      # install.sh downloads from the release assets.
+      - name: Package
+        shell: bash
+        run: |
+          BIN="target/${{ matrix.target }}/release/pulseagent"
+          ARCHIVE="pulseagent-${{ matrix.target }}.tar.gz"
+          tar czf "$ARCHIVE" -C "$(dirname "$BIN")" "$(basename "$BIN")"
+          echo "archive=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulseagent-${{ matrix.target }}
+          path: ${{ env.archive }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Release job — collects all four tarballs, generates checksums, publishes
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create/update a release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum pulseagent-*.tar.gz | tee checksums.sha256
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.value }}
+          name: PulseAgent ${{ steps.tag.outputs.value }}
+          body: |
+            ## Install
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/pulseboard/pulseboard-agent/main/install.sh | bash
+            ```
+
+            Or with pre-set values:
+
+            ```bash
+            PULSEBOARD_URL=https://acme.pulseboard.cloud \
+            ENROLL_TOKEN=tok_... \
+            bash install.sh
+            ```
+
+            See the [README](https://github.com/pulseboard/pulseboard-agent#readme) for Docker, Kubernetes, and manual install instructions.
+
+            ## Assets
+
+            | File | Platform |
+            | ---- | -------- |
+            | `pulseagent-x86_64-unknown-linux-musl.tar.gz` | Linux x86-64 (static musl) |
+            | `pulseagent-aarch64-unknown-linux-musl.tar.gz` | Linux arm64 (static musl) |
+            | `pulseagent-x86_64-apple-darwin.tar.gz` | macOS Intel |
+            | `pulseagent-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon |
+
+            Verify with `sha256sum -c checksums.sha256`.
+          files: |
+            dist/pulseagent-*.tar.gz
+            dist/checksums.sha256
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.value, '-') }}
