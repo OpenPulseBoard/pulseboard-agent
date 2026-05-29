@@ -8,9 +8,9 @@ use crate::enrollment::AgentCredentials;
 use crate::signal::{LogEntry, MetricKind, MetricSample, Signal};
 
 pub struct PulseBoardTarget {
-    creds:  AgentCredentials,
+    creds: AgentCredentials,
     client: reqwest::Client,
-    cfg:    Option<PulseBoardTargetConfig>,
+    cfg: Option<PulseBoardTargetConfig>,
 }
 
 impl PulseBoardTarget {
@@ -28,12 +28,12 @@ impl PulseBoardTarget {
     /// Logs    → Loki push  → POST /loki/api/v1/push
     pub async fn flush(&self, batch: Vec<Signal>) -> Result<()> {
         let mut metrics = vec![];
-        let mut logs    = vec![];
+        let mut logs = vec![];
 
         for s in batch {
             match s {
                 Signal::Metric(m) => metrics.push(m),
-                Signal::Log(l)    => logs.push(l),
+                Signal::Log(l) => logs.push(l),
             }
         }
 
@@ -52,10 +52,7 @@ impl PulseBoardTarget {
 
     async fn flush_metrics(&self, metrics: Vec<MetricSample>) -> Result<()> {
         let payload = build_otlp_metrics(&metrics);
-        let url = format!(
-            "{}/v1/metrics",
-            self.creds.base_url.trim_end_matches('/')
-        );
+        let url = format!("{}/v1/metrics", self.creds.base_url.trim_end_matches('/'));
 
         let resp = self
             .client
@@ -133,10 +130,12 @@ fn build_otlp_metrics(metrics: &[MetricSample]) -> Value {
                     let attrs: Vec<Value> = p
                         .labels
                         .iter()
-                        .map(|(k, v)| json!({
-                            "key": k,
-                            "value": { "stringValue": v }
-                        }))
+                        .map(|(k, v)| {
+                            json!({
+                                "key": k,
+                                "value": { "stringValue": v }
+                            })
+                        })
                         .collect();
 
                     let time_ns = p.timestamp_ms as i64 * 1_000_000;
@@ -197,15 +196,18 @@ fn build_loki_push(logs: &[LogEntry]) -> Value {
         // Stable key for grouping
         let mut kv: Vec<_> = entry.labels.iter().collect();
         kv.sort_by_key(|(k, _)| k.as_str());
-        let key = kv.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(",");
+        let key = kv
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join(",");
         streams.entry(key).or_default().push(entry);
     }
 
     let stream_objs: Vec<Value> = streams
         .into_iter()
         .map(|(_, entries)| {
-            let labels: std::collections::HashMap<String, String> =
-                entries[0].labels.clone();
+            let labels: std::collections::HashMap<String, String> = entries[0].labels.clone();
             let values: Vec<Value> = entries
                 .iter()
                 .map(|e| json!([e.timestamp_ns.to_string(), e.line]))

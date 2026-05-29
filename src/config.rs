@@ -50,10 +50,10 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            data_dir:       PathBuf::from("/var/lib/pulseagent"),
-            log_level:      "info".into(),
-            instance_name:  None,
-            enroll_token:   None,
+            data_dir: PathBuf::from("/var/lib/pulseagent"),
+            log_level: "info".into(),
+            instance_name: None,
+            enroll_token: None,
             pulseboard_url: None,
         }
     }
@@ -66,10 +66,10 @@ impl Default for AgentConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SourcesConfig {
     pub host_metrics: Option<HostMetricsConfig>,
-    pub file_logs:    Vec<FileLogsConfig>,
-    pub prom_scrape:  Vec<PromScrapeConfig>,
+    pub file_logs: Vec<FileLogsConfig>,
+    pub prom_scrape: Vec<PromScrapeConfig>,
     /// Stub — OTLP HTTP/JSON receiver on a local port
-    pub otlp:         Option<OtlpConfig>,
+    pub otlp: Option<OtlpConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,8 +91,8 @@ pub struct HostMetricsConfig {
 impl Default for HostMetricsConfig {
     fn default() -> Self {
         Self {
-            interval:     default_interval(),
-            collectors:   vec![],
+            interval: default_interval(),
+            collectors: vec![],
             extra_labels: HashMap::new(),
         }
     }
@@ -100,7 +100,7 @@ impl Default for HostMetricsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileLogsConfig {
-    pub name:  String,
+    pub name: String,
     pub paths: Vec<String>,
 
     /// Multiline start pattern (regex). Lines that do NOT match are appended
@@ -113,8 +113,8 @@ pub struct FileLogsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromScrapeConfig {
-    pub name:   String,
-    pub url:    String,
+    pub name: String,
+    pub url: String,
 
     /// Scrape interval, e.g. "30s"
     #[serde(default = "default_scrape_interval")]
@@ -131,9 +131,15 @@ pub struct OtlpConfig {
     pub port: u16,
 }
 
-fn default_interval()       -> String { "15s".into() }
-fn default_scrape_interval() -> String { "30s".into() }
-fn default_otlp_port()       -> u16   { 4318 }
+fn default_interval() -> String {
+    "15s".into()
+}
+fn default_scrape_interval() -> String {
+    "30s".into()
+}
+fn default_otlp_port() -> u16 {
+    4318
+}
 
 // ---------------------------------------------------------------------------
 // [processors] section
@@ -157,14 +163,17 @@ pub struct ProcessorsConfig {
 #[serde(default)]
 pub struct BatchConfig {
     /// Maximum number of signals in a batch before flushing
-    pub max_size:       usize,
+    pub max_size: usize,
     /// Maximum time to hold a partial batch before flushing (e.g. "5s")
-    pub max_delay:      String,
+    pub max_delay: String,
 }
 
 impl Default for BatchConfig {
     fn default() -> Self {
-        Self { max_size: 1000, max_delay: "5s".into() }
+        Self {
+            max_size: 1000,
+            max_delay: "5s".into(),
+        }
     }
 }
 
@@ -178,11 +187,11 @@ pub struct CardinalityGuardConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelabelRule {
     pub source_labels: Vec<String>,
-    pub separator:     Option<String>,
-    pub target_label:  Option<String>,
-    pub regex:         Option<String>,
-    pub replacement:   Option<String>,
-    pub action:        RelabelAction,
+    pub separator: Option<String>,
+    pub target_label: Option<String>,
+    pub regex: Option<String>,
+    pub replacement: Option<String>,
+    pub action: RelabelAction,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -199,9 +208,9 @@ pub enum RelabelAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedactPiiRule {
     /// Label name or log field to check
-    pub field:       String,
+    pub field: String,
     /// Regex whose full matches are replaced
-    pub pattern:     String,
+    pub pattern: String,
     /// Replacement string (default: "[[redacted]]")
     pub replacement: Option<String>,
 }
@@ -229,7 +238,9 @@ pub struct PulseBoardTargetConfig {
     pub loki_logs: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 // ---------------------------------------------------------------------------
 // Loader
@@ -242,24 +253,22 @@ pub fn load(path: &Path) -> Result<Config> {
         // the config file doesn't exist yet.
         tracing::warn!("config file {:?} not found — using built-in defaults", path);
         return Ok(Config {
-            agent:      AgentConfig::default(),
-            sources:    SourcesConfig {
+            agent: AgentConfig::default(),
+            sources: SourcesConfig {
                 host_metrics: Some(HostMetricsConfig::default()),
                 ..Default::default()
             },
             processors: ProcessorsConfig::default(),
-            targets:    TargetsConfig::default(),
+            targets: TargetsConfig::default(),
         });
     }
 
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {:?}", path))?;
+    let raw = std::fs::read_to_string(path).with_context(|| format!("reading {:?}", path))?;
 
     // Perform ${env:VAR} expansion before parsing TOML
     let expanded = expand_env_vars(&raw);
 
-    let cfg: Config = toml::from_str(&expanded)
-        .with_context(|| format!("parsing {:?}", path))?;
+    let cfg: Config = toml::from_str(&expanded).with_context(|| format!("parsing {:?}", path))?;
 
     validate(&cfg)?;
     Ok(cfg)
@@ -269,7 +278,8 @@ fn expand_env_vars(s: &str) -> String {
     let re = regex::Regex::new(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}").unwrap();
     re.replace_all(s, |caps: &regex::Captures| {
         std::env::var(&caps[1]).unwrap_or_default()
-    }).into_owned()
+    })
+    .into_owned()
 }
 
 fn validate(cfg: &Config) -> Result<()> {
@@ -304,14 +314,26 @@ fn validate(cfg: &Config) -> Result<()> {
 pub fn parse_duration_secs(s: &str) -> Result<u64> {
     let s = s.trim();
     if let Some(n) = s.strip_suffix('s') {
-        return n.trim().parse::<u64>().with_context(|| format!("bad duration {:?}", s));
+        return n
+            .trim()
+            .parse::<u64>()
+            .with_context(|| format!("bad duration {:?}", s));
     }
     if let Some(n) = s.strip_suffix('m') {
-        return Ok(n.trim().parse::<u64>().with_context(|| format!("bad duration {:?}", s))? * 60);
+        return Ok(n
+            .trim()
+            .parse::<u64>()
+            .with_context(|| format!("bad duration {:?}", s))?
+            * 60);
     }
     if let Some(n) = s.strip_suffix('h') {
-        return Ok(n.trim().parse::<u64>().with_context(|| format!("bad duration {:?}", s))? * 3600);
+        return Ok(n
+            .trim()
+            .parse::<u64>()
+            .with_context(|| format!("bad duration {:?}", s))?
+            * 3600);
     }
     // Plain integer = seconds
-    s.parse::<u64>().with_context(|| format!("bad duration {:?}", s))
+    s.parse::<u64>()
+        .with_context(|| format!("bad duration {:?}", s))
 }

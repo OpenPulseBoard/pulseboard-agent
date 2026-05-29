@@ -17,7 +17,7 @@ pub enum Verdict {
 /// high-cardinality `user_id` label accidentally applied to a counter).
 #[derive(Clone)]
 pub struct CardinalityGuard {
-    max:    usize,
+    max: usize,
     // metric_name → set of label fingerprints
     series: Arc<DashMap<String, HashSet<u64>>>,
 }
@@ -25,7 +25,7 @@ pub struct CardinalityGuard {
 impl CardinalityGuard {
     pub fn new(max_series_per_metric: usize) -> Self {
         Self {
-            max:    max_series_per_metric,
+            max: max_series_per_metric,
             series: Arc::new(DashMap::new()),
         }
     }
@@ -42,7 +42,7 @@ impl CardinalityGuard {
             tracing::warn!(
                 metric = metric_name,
                 series = entry.len(),
-                max    = self.max,
+                max = self.max,
                 "cardinality guard: dropping new series"
             );
             return Verdict::Drop;

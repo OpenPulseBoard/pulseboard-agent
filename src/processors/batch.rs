@@ -8,19 +8,19 @@ use crate::signal::Signal;
 /// flushed (size limit hit or time limit exceeded).
 /// Call `drain()` at shutdown to get any remaining signals.
 pub struct BatchProcessor {
-    max_size:    usize,
-    max_delay:   Duration,
-    buf:         Vec<Signal>,
-    last_flush:  Instant,
+    max_size: usize,
+    max_delay: Duration,
+    buf: Vec<Signal>,
+    last_flush: Instant,
 }
 
 impl BatchProcessor {
     pub fn new(max_size: usize, max_delay_secs: u64) -> Self {
         Self {
             max_size,
-            max_delay:   Duration::from_secs(max_delay_secs),
-            buf:         Vec::with_capacity(max_size),
-            last_flush:  Instant::now(),
+            max_delay: Duration::from_secs(max_delay_secs),
+            buf: Vec::with_capacity(max_size),
+            last_flush: Instant::now(),
         }
     }
 
@@ -40,7 +40,11 @@ impl BatchProcessor {
 
     /// Drain any remaining signals (call at shutdown).
     pub fn drain(&mut self) -> Option<Vec<Signal>> {
-        if self.buf.is_empty() { None } else { Some(self.flush()) }
+        if self.buf.is_empty() {
+            None
+        } else {
+            Some(self.flush())
+        }
     }
 
     fn flush(&mut self) -> Vec<Signal> {

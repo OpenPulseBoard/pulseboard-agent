@@ -10,11 +10,11 @@ pub struct Relabeler {
 
 struct CompiledRule {
     source_labels: Vec<String>,
-    separator:     String,
-    target_label:  Option<String>,
-    regex:         Option<Regex>,
-    replacement:   String,
-    action:        RelabelAction,
+    separator: String,
+    target_label: Option<String>,
+    regex: Option<Regex>,
+    replacement: String,
+    action: RelabelAction,
 }
 
 impl Relabeler {
@@ -23,11 +23,11 @@ impl Relabeler {
             .iter()
             .map(|r| CompiledRule {
                 source_labels: r.source_labels.clone(),
-                separator:     r.separator.clone().unwrap_or_else(|| ";".into()),
-                target_label:  r.target_label.clone(),
-                regex:         r.regex.as_deref().and_then(|p| Regex::new(p).ok()),
-                replacement:   r.replacement.clone().unwrap_or_else(|| "$1".into()),
-                action:        r.action.clone(),
+                separator: r.separator.clone().unwrap_or_else(|| ";".into()),
+                target_label: r.target_label.clone(),
+                regex: r.regex.as_deref().and_then(|p| Regex::new(p).ok()),
+                replacement: r.replacement.clone().unwrap_or_else(|| "$1".into()),
+                action: r.action.clone(),
             })
             .collect();
         Self { rules: compiled }
@@ -62,11 +62,14 @@ fn apply_rule(rule: &CompiledRule, labels: &mut Labels, metric_name: &mut String
     match rule.action {
         RelabelAction::Drop | RelabelAction::Keep => {
             let src_value = join_source_labels(&rule.source_labels, &rule.separator, labels);
-            let matches = rule.regex.as_ref().map_or(true, |re| re.is_match(&src_value));
+            let matches = rule
+                .regex
+                .as_ref()
+                .map_or(true, |re| re.is_match(&src_value));
             if rule.action == RelabelAction::Drop {
-                return !matches;  // drop if matches
+                return !matches; // drop if matches
             } else {
-                return matches;   // keep only if matches
+                return matches; // keep only if matches
             }
         }
 

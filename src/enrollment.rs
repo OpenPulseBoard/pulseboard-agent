@@ -8,9 +8,9 @@ use crate::config::Config;
 /// Credentials persisted after a successful enrollment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCredentials {
-    pub agent_id:    String,
-    pub api_key:     String,
-    pub base_url:    String,
+    pub agent_id: String,
+    pub api_key: String,
+    pub base_url: String,
 }
 
 const CREDS_FILE: &str = "credentials.json";
@@ -34,7 +34,10 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
             debug!("loaded existing credentials from {:?}", creds_path);
             return Ok(creds);
         }
-        warn!("credentials file {:?} is corrupt — re-enrolling", creds_path);
+        warn!(
+            "credentials file {:?} is corrupt — re-enrolling",
+            creds_path
+        );
     }
 
     // 2. Enrollment token exchange
@@ -57,7 +60,7 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
         if let Some(api_key) = &target.api_key {
             let creds = AgentCredentials {
                 agent_id: format!("direct-{}", uuid::Uuid::new_v4()),
-                api_key:  api_key.clone(),
+                api_key: api_key.clone(),
                 base_url: target.url.clone(),
             };
             persist_creds(&creds_path, &creds)?;
@@ -73,7 +76,7 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
     );
     Ok(AgentCredentials {
         agent_id: "local".into(),
-        api_key:  String::new(),
+        api_key: String::new(),
         base_url: String::new(),
     })
 }
@@ -113,7 +116,7 @@ async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials>
             .as_str()
             .context("missing agentId in enroll response")?
             .to_string(),
-        api_key:  json["apiKey"]
+        api_key: json["apiKey"]
             .as_str()
             .context("missing apiKey in enroll response")?
             .to_string(),
@@ -124,9 +127,9 @@ async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials>
 /// Send a checkin heartbeat. Called once a minute from the pipeline.
 pub async fn checkin(
     creds: &AgentCredentials,
-    version:     &str,
+    version: &str,
     config_hash: &str,
-    stats:       &serde_json::Value,
+    stats: &serde_json::Value,
 ) -> Result<()> {
     if creds.base_url.is_empty() {
         return Ok(()); // local-only mode
@@ -172,8 +175,7 @@ fn load_creds(path: &Path) -> Result<AgentCredentials> {
 
 fn persist_creds(path: &Path, creds: &AgentCredentials) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create {:?}", parent))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create {:?}", parent))?;
     }
     let raw = serde_json::to_string_pretty(creds)?;
     std::fs::write(path, raw).with_context(|| format!("write {:?}", path))?;

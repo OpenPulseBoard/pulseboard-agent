@@ -20,7 +20,12 @@ mod web;
 )]
 struct Cli {
     /// Path to the agent configuration file (TOML)
-    #[arg(short, long, default_value = "/etc/pulseagent/agent.toml", env = "PULSEAGENT_CONFIG")]
+    #[arg(
+        short,
+        long,
+        default_value = "/etc/pulseagent/agent.toml",
+        env = "PULSEAGENT_CONFIG"
+    )]
     config: PathBuf,
 
     /// Override log level (trace|debug|info|warn|error)
@@ -57,7 +62,10 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    info!("pulseagent starting (version {})", env!("CARGO_PKG_VERSION"));
+    info!(
+        "pulseagent starting (version {})",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Load and validate configuration
     let cfg = config::load(&cli.config).map_err(|e| {

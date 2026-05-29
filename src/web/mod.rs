@@ -1,9 +1,4 @@
-use axum::{
-    extract::State,
-    response::Html,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::State, response::Html, routing::get, Json, Router};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -18,23 +13,23 @@ pub struct Inspector(Arc<Mutex<InspectorState>>);
 
 #[derive(Default)]
 struct InspectorState {
-    events:       VecDeque<InspectorEvent>,
+    events: VecDeque<InspectorEvent>,
     source_stats: std::collections::HashMap<String, SourceStat>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InspectorEvent {
-    pub kind:   String,
-    pub name:   String,
-    pub value:  Option<f64>,
+    pub kind: String,
+    pub name: String,
+    pub value: Option<f64>,
     pub labels: std::collections::HashMap<String, String>,
-    pub ts_ms:  i64,
+    pub ts_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SourceStat {
     pub metrics: u64,
-    pub logs:    u64,
+    pub logs: u64,
 }
 
 impl Inspector {
@@ -47,11 +42,11 @@ impl Inspector {
         match signal {
             Signal::Metric(m) => {
                 let event = InspectorEvent {
-                    kind:   "metric".into(),
-                    name:   m.name.clone(),
-                    value:  Some(m.value),
+                    kind: "metric".into(),
+                    name: m.name.clone(),
+                    value: Some(m.value),
                     labels: m.labels.clone(),
-                    ts_ms:  m.timestamp_ms,
+                    ts_ms: m.timestamp_ms,
                 };
                 state.events.push_back(event);
                 if state.events.len() > MAX_EVENTS {
@@ -60,11 +55,11 @@ impl Inspector {
             }
             Signal::Log(l) => {
                 let event = InspectorEvent {
-                    kind:   "log".into(),
-                    name:   l.line.chars().take(80).collect(),
-                    value:  None,
+                    kind: "log".into(),
+                    name: l.line.chars().take(80).collect(),
+                    value: None,
                     labels: l.labels.clone(),
-                    ts_ms:  l.timestamp_ns / 1_000_000,
+                    ts_ms: l.timestamp_ns / 1_000_000,
                 };
                 state.events.push_back(event);
                 if state.events.len() > MAX_EVENTS {
@@ -77,12 +72,24 @@ impl Inspector {
     pub fn record_source(&self, source: &str, kind: &str) {
         let mut state = self.0.lock().unwrap();
         let stat = state.source_stats.entry(source.to_string()).or_default();
-        if kind == "metric" { stat.metrics += 1; }
-        if kind == "log"    { stat.logs    += 1; }
+        if kind == "metric" {
+            stat.metrics += 1;
+        }
+        if kind == "log" {
+            stat.logs += 1;
+        }
     }
 
     fn get_events(&self) -> Vec<InspectorEvent> {
-        self.0.lock().unwrap().events.iter().rev().take(200).cloned().collect()
+        self.0
+            .lock()
+            .unwrap()
+            .events
+            .iter()
+            .rev()
+            .take(200)
+            .cloned()
+            .collect()
     }
 
     fn get_source_stats(&self) -> std::collections::HashMap<String, SourceStat> {
@@ -96,10 +103,10 @@ impl Inspector {
 
 pub async fn serve(inspector: Inspector, port: u16) -> anyhow::Result<()> {
     let app = Router::new()
-        .route("/",              get(root_handler))
-        .route("/api/events",    get(events_handler))
-        .route("/api/sources",   get(sources_handler))
-        .route("/api/healthz",   get(health_handler))
+        .route("/", get(root_handler))
+        .route("/api/events", get(events_handler))
+        .route("/api/sources", get(sources_handler))
+        .route("/api/healthz", get(health_handler))
         .with_state(inspector);
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
@@ -108,7 +115,9 @@ pub async fn serve(inspector: Inspector, port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn health_handler() -> &'static str { "ok" }
+async fn health_handler() -> &'static str {
+    "ok"
+}
 
 async fn events_handler(State(insp): State<Inspector>) -> Json<Vec<InspectorEvent>> {
     Json(insp.get_events())

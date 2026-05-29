@@ -4,8 +4,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
-use crate::config::{PromScrapeConfig, parse_duration_secs};
-use crate::signal::{Labels, MetricKind, MetricSample, Signal, now_ms};
+use crate::config::{parse_duration_secs, PromScrapeConfig};
+use crate::signal::{now_ms, Labels, MetricKind, MetricSample, Signal};
 use crate::web::Inspector;
 
 pub struct PromScrapeSource {
@@ -47,10 +47,10 @@ impl PromScrapeSource {
 }
 
 async fn scrape(
-    client:  &reqwest::Client,
-    url:     &str,
-    ts:      i64,
-    extra:   &HashMap<String, String>,
+    client: &reqwest::Client,
+    url: &str,
+    ts: i64,
+    extra: &HashMap<String, String>,
 ) -> Result<Vec<MetricSample>> {
     let text = client
         .get(url)
@@ -64,8 +64,8 @@ async fn scrape(
 }
 
 fn parse_prometheus_text(
-    text:  &str,
-    ts:    i64,
+    text: &str,
+    ts: i64,
     extra: &HashMap<String, String>,
 ) -> Result<Vec<MetricSample>> {
     let lines = prometheus_parse::Scrape::parse(text.lines().map(|s| Ok(s.to_owned())))
@@ -74,7 +74,7 @@ fn parse_prometheus_text(
     let mut samples = vec![];
     for sample in lines.samples {
         let value = match sample.value {
-            prometheus_parse::Value::Gauge(v)   => v,
+            prometheus_parse::Value::Gauge(v) => v,
             prometheus_parse::Value::Counter(v) => v,
             prometheus_parse::Value::Untyped(v) => v,
             // Skip histograms/summaries for now — they arrive as multiple lines
@@ -83,10 +83,14 @@ fn parse_prometheus_text(
 
         let kind = match sample.value {
             prometheus_parse::Value::Counter(_) => MetricKind::Counter,
-            _                                   => MetricKind::Gauge,
+            _ => MetricKind::Gauge,
         };
 
-        let mut labels: Labels = sample.labels.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut labels: Labels = sample
+            .labels
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         labels.extend(extra.clone());
 
         samples.push(MetricSample {

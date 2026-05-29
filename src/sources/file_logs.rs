@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 use crate::config::FileLogsConfig;
-use crate::signal::{LogEntry, Signal, now_ns};
+use crate::signal::{now_ns, LogEntry, Signal};
 use crate::web::Inspector;
 
 pub struct FileLogsSource {
@@ -23,7 +23,10 @@ impl FileLogsSource {
         // Expand glob patterns — simple glob using walkdir-style matching
         let paths = expand_globs(&self.cfg.paths);
         if paths.is_empty() {
-            warn!("file_logs {:?}: no files matched {:?}", self.cfg.name, self.cfg.paths);
+            warn!(
+                "file_logs {:?}: no files matched {:?}",
+                self.cfg.name, self.cfg.paths
+            );
         }
 
         // Track byte offset per file so we tail, not re-read
@@ -37,7 +40,10 @@ impl FileLogsSource {
         }
 
         let mut ticker = tokio::time::interval(Duration::from_secs(1));
-        let multiline_re = self.cfg.multiline_start.as_deref()
+        let multiline_re = self
+            .cfg
+            .multiline_start
+            .as_deref()
             .and_then(|p| regex::Regex::new(p).ok());
 
         loop {
@@ -50,8 +56,11 @@ impl FileLogsSource {
                 let offset = offsets.entry(path.clone()).or_insert(0);
 
                 let mut f = match std::fs::File::open(path) {
-                    Ok(f)  => f,
-                    Err(e) => { debug!("file_logs: open {:?}: {}", path, e); continue; }
+                    Ok(f) => f,
+                    Err(e) => {
+                        debug!("file_logs: open {:?}: {}", path, e);
+                        continue;
+                    }
                 };
 
                 // Handle log rotation: if file is shorter than our offset, reset
@@ -65,14 +74,16 @@ impl FileLogsSource {
                     continue;
                 }
 
-                let mut reader   = BufReader::new(f);
-                let mut buf      = String::new();
-                let mut pending  = String::new(); // multiline accumulator
+                let mut reader = BufReader::new(f);
+                let mut buf = String::new();
+                let mut pending = String::new(); // multiline accumulator
 
                 loop {
                     buf.clear();
                     let n = reader.read_line(&mut buf).unwrap_or(0);
-                    if n == 0 { break; } // no more data
+                    if n == 0 {
+                        break;
+                    } // no more data
                     *offset += n as u64;
 
                     let trimmed = buf.trim_end_matches('\n').trim_end_matches('\r');
@@ -85,7 +96,9 @@ impl FileLogsSource {
                             !prev.is_empty()
                         } else {
                             // Continuation
-                            if !pending.is_empty() { pending.push('\n'); }
+                            if !pending.is_empty() {
+                                pending.push('\n');
+                            }
                             pending.push_str(trimmed);
                             false
                         }
@@ -137,10 +150,10 @@ fn expand_globs(patterns: &[String]) -> Vec<PathBuf> {
 }
 
 fn make_entry(
-    line:   &str,
-    path:   &PathBuf,
+    line: &str,
+    path: &PathBuf,
     source: &str,
-    extra:  &HashMap<String, String>,
+    extra: &HashMap<String, String>,
 ) -> LogEntry {
     let mut labels = extra.clone();
     labels.insert("source".into(), source.into());
