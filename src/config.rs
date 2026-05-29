@@ -452,7 +452,10 @@ url = "https://acme.pulseboard.cloud"
         assert_eq!(cfg.sources.prom_scrape.len(), 1);
         assert_eq!(cfg.processors.batch.max_size, 500);
         assert_eq!(
-            cfg.processors.cardinality_guard.unwrap().max_series_per_metric,
+            cfg.processors
+                .cardinality_guard
+                .unwrap()
+                .max_series_per_metric,
             1000
         );
         assert!(cfg.targets.pulseboard.is_some());
@@ -462,9 +465,7 @@ url = "https://acme.pulseboard.cloud"
     #[test]
     fn env_var_expansion() {
         std::env::set_var("TEST_PULSE_TOKEN", "secret123");
-        let expanded = expand_env_vars(
-            r#"enroll_token = "${env:TEST_PULSE_TOKEN}""#,
-        );
+        let expanded = expand_env_vars(r#"enroll_token = "${env:TEST_PULSE_TOKEN}""#);
         assert!(expanded.contains("secret123"));
         std::env::remove_var("TEST_PULSE_TOKEN");
     }
