@@ -37,7 +37,7 @@ jobs:
 
           # macOS — native builds on the matching runner architecture
           - target: x86_64-apple-darwin
-            os: macos-13           # Intel runner
+            os: macos-14           # Intel runner
             use_cross: false
 
           - target: aarch64-apple-darwin
