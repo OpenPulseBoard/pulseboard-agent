@@ -62,10 +62,7 @@ fn apply_rule(rule: &CompiledRule, labels: &mut Labels, metric_name: &mut String
     match rule.action {
         RelabelAction::Drop | RelabelAction::Keep => {
             let src_value = join_source_labels(&rule.source_labels, &rule.separator, labels);
-            let matches = rule
-                .regex
-                .as_ref()
-                .is_none_or(|re| re.is_match(&src_value));
+            let matches = rule.regex.as_ref().is_none_or(|re| re.is_match(&src_value));
             if rule.action == RelabelAction::Drop {
                 return !matches; // drop if matches
             } else {

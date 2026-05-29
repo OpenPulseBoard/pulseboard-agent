@@ -149,12 +149,7 @@ fn expand_globs(patterns: &[String]) -> Vec<PathBuf> {
     paths
 }
 
-fn make_entry(
-    line: &str,
-    path: &Path,
-    source: &str,
-    extra: &HashMap<String, String>,
-) -> LogEntry {
+fn make_entry(line: &str, path: &Path, source: &str, extra: &HashMap<String, String>) -> LogEntry {
     let mut labels = extra.clone();
     labels.insert("source".into(), source.into());
     labels.insert(
