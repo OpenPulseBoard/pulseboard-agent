@@ -53,12 +53,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.88.0
           targets: ${{ matrix.target }}
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.target }}
+
+      - name: Verify lockfile
+        run: cargo metadata --locked --format-version 1 > /dev/null
 
       # cross is the easiest way to produce musl binaries on a standard
       # ubuntu runner; it runs the actual compilation inside a Docker
