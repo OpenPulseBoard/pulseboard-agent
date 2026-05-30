@@ -46,7 +46,7 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
             .agent
             .pulseboard_url
             .clone()
-            .or_else(|| cfg.targets.pulseboard.as_ref().map(|t| t.url.clone()))
+                        .or_else(|| cfg.targets.pulseboard.as_ref().and_then(|t| t.url.clone()))
             .context("enroll_token set but no pulseboard_url configured")?;
 
         let creds = exchange_token(&base_url, token).await?;
@@ -58,10 +58,15 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
     // 3. Direct API key (no enrollment round-trip)
     if let Some(target) = &cfg.targets.pulseboard {
         if let Some(api_key) = &target.api_key {
+            let base_url = target
+                .url
+                .clone()
+                .or_else(|| cfg.agent.pulseboard_url.clone())
+                .context("api_key set but no url configured in [targets.pulseboard] or agent.pulseboard_url")?;
             let creds = AgentCredentials {
                 agent_id: format!("direct-{}", uuid::Uuid::new_v4()),
                 api_key: api_key.clone(),
-                base_url: target.url.clone(),
+                base_url,
             };
             persist_creds(&creds_path, &creds)?;
             info!("using direct API key (no enrollment)");

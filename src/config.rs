@@ -229,7 +229,8 @@ pub struct TargetsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PulseBoardTargetConfig {
     /// Workspace URL, e.g. https://acme.pulseboard.cloud
-    pub url: String,
+    /// Falls back to `agent.pulseboard_url` when omitted.
+    pub url: Option<String>,
     /// API key. Supports ${env:VAR} expansion.
     pub api_key: Option<String>,
     /// Send metrics as OTLP JSON (default: true)
@@ -459,6 +460,40 @@ url = "https://acme.pulseboard.cloud"
             1000
         );
         assert!(cfg.targets.pulseboard.is_some());
+    }
+
+    // Regression: config produced by install.sh has a bare [targets.pulseboard]
+    // with no `url` field — it must parse cleanly (url is derived from
+    // agent.pulseboard_url at runtime).
+    #[test]
+    fn install_sh_config_parses() {
+        let cfg = parse(
+            r#"
+[agent]
+data_dir       = "/var/lib/pulseagent"
+log_level      = "info"
+pulseboard_url = "https://acme.pulseboard.cloud"
+enroll_token   = "tok_test"
+
+[sources.host_metrics]
+interval = "15s"
+
+[processors.batch]
+max_size  = 1000
+max_delay = "5s"
+
+[processors.cardinality_guard]
+max_series_per_metric = 2000
+
+[targets.pulseboard]
+"#,
+        );
+        assert!(cfg.targets.pulseboard.is_some());
+        assert!(cfg.targets.pulseboard.unwrap().url.is_none());
+        assert_eq!(
+            cfg.agent.pulseboard_url.as_deref(),
+            Some("https://acme.pulseboard.cloud")
+        );
     }
 
     // env-var expansion replaces ${env:VAR} tokens.
