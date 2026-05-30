@@ -110,7 +110,7 @@ pub async fn run(
             interval.tick().await;
             let stats = serde_json::json!({ "version": env!("CARGO_PKG_VERSION") });
             if let Err(e) = checkin(&creds_clone, env!("CARGO_PKG_VERSION"), "0", &stats).await {
-                warn!("checkin error: {}", e);
+                warn!("checkin error: {:#}", e);
             }
         }
     });
@@ -162,7 +162,7 @@ pub async fn run(
             } else if let Some(ref t) = target {
                 match t.flush(batch).await {
                     Ok(()) => signals_out += n as u64,
-                    Err(e) => warn!("target flush error: {}", e),
+                    Err(e) => warn!("target flush error: {:#}", e),
                 }
             }
         }
@@ -177,7 +177,7 @@ pub async fn run(
             }
         } else if let Some(ref t) = target {
             if let Err(e) = t.flush(batch).await {
-                warn!("final flush error: {}", e);
+                warn!("final flush error: {:#}", e);
             } else {
                 signals_out += n as u64;
             }
