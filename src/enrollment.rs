@@ -114,17 +114,12 @@ async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials>
         "version":  env!("CARGO_PKG_VERSION"),
     });
 
-    let resp = HTTP
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .with_context(|| {
-            format!(
-                "POST {url} — check that pulseboard_url starts with https:// \
-                and the host is reachable"
-            )
-        })?;
+    let resp = HTTP.post(&url).json(&body).send().await.with_context(|| {
+        format!(
+            "POST {url} — check that pulseboard_url starts with https:// \
+            and the host is reachable"
+        )
+    })?;
 
     if !resp.status().is_success() {
         let status = resp.status();
