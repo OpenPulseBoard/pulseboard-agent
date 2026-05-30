@@ -23,7 +23,7 @@ enroll_token   = "paste-token-from-portal-here"
 [sources.host_metrics]
 # Collect CPU, memory, disk, network and load average every 15 seconds
 interval   = "15s"
-collectors = ["cpu", "memory", "disk", "network", "load"]
+collectors = ["cpu", "memory", "disk", "diskio", "network", "load"]
 # extra_labels = { env = "prod" }
 
 # Tail one or more log files (glob patterns supported)
