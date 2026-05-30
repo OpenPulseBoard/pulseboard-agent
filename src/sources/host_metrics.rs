@@ -85,14 +85,9 @@ fn collect_cpu(
 ) -> Vec<MetricSample> {
     #[cfg(target_os = "linux")]
     {
-        let _ = (sys, accum);
         if let Some(samples) = collect_cpu_proc_stat(ts, extra) {
             return samples;
         }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = sys;
     }
     accum.collect_from_sysinfo(sys, ts, extra)
 }
