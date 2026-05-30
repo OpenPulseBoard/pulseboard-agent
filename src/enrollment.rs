@@ -1,9 +1,23 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::LazyLock;
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use crate::config::Config;
+
+// Shared HTTP client. Reusing one client keeps the connection pool warm
+// (HTTP/2 / keep-alive). Building a fresh `reqwest::Client` per checkin
+// triggers a cold TLS handshake every minute and, through Caddy's
+// on-demand TLS + Fly flycast hop, intermittently surfaces as rustls
+// `received corrupt message of type InvalidContentType` errors.
+static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("build reqwest client")
+});
 
 /// Credentials persisted after a successful enrollment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,11 +114,7 @@ async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials>
         "version":  env!("CARGO_PKG_VERSION"),
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("build HTTP client")?;
-    let resp = client
+    let resp = HTTP
         .post(&url)
         .json(&body)
         .send()
@@ -159,11 +169,7 @@ pub async fn checkin(
         "stats":      stats,
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("build HTTP client")?;
-    let resp = client
+    let resp = HTTP
         .post(&url)
         .bearer_auth(format!("{}:{}", creds.agent_id, creds.api_key))
         .json(&body)
