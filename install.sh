@@ -164,6 +164,13 @@ EOF
     mkdir -p "$DATA_DIR"
     chown pulseagent:pulseagent "$DATA_DIR" 2>/dev/null || true
 
+    # Hand config ownership to the service user so it can read the file
+    # (chmod 600 was set at write time; root:pulseagent + 640 keeps it private)
+    chown root:pulseagent "${CONFIG_DIR}/agent.toml" 2>/dev/null || true
+    chmod 640 "${CONFIG_DIR}/agent.toml" 2>/dev/null || true
+    chown root:pulseagent "${CONFIG_DIR}" 2>/dev/null || true
+    chmod 750 "${CONFIG_DIR}" 2>/dev/null || true
+
     systemctl daemon-reload
     systemctl enable  pulseagent
     systemctl restart pulseagent
