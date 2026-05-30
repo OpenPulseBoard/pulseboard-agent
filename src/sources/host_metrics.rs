@@ -316,7 +316,7 @@ fn collect_diskio(ts: i64, extra: &HashMap<String, String>) -> Vec<MetricSample>
             || device.starts_with("dm-")
             || device.starts_with("sr")
             || (device.starts_with("sd")
-                && device.chars().last().map_or(false, |c| c.is_ascii_digit()))
+                && device.chars().last().is_some_and(|c| c.is_ascii_digit()))
             || (device.starts_with("nvme") && device.contains('p'))
             || (device.starts_with("mmcblk") && device.contains('p'))
         {
