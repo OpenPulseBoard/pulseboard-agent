@@ -46,7 +46,7 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
             .agent
             .pulseboard_url
             .clone()
-                        .or_else(|| cfg.targets.pulseboard.as_ref().and_then(|t| t.url.clone()))
+            .or_else(|| cfg.targets.pulseboard.as_ref().and_then(|t| t.url.clone()))
             .context("enroll_token set but no pulseboard_url configured")?;
 
         let creds = exchange_token(&base_url, token).await?;
