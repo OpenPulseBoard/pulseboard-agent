@@ -100,13 +100,21 @@ async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials>
         "version":  env!("CARGO_PKG_VERSION"),
     });
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .context("build HTTP client")?;
     let resp = client
         .post(&url)
         .json(&body)
         .send()
         .await
-        .with_context(|| format!("POST {url}"))?;
+        .with_context(|| {
+            format!(
+                "POST {url} — check that pulseboard_url starts with https:// \
+                and the host is reachable"
+            )
+        })?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -151,10 +159,13 @@ pub async fn checkin(
         "stats":      stats,
     });
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .context("build HTTP client")?;
     let resp = client
         .post(&url)
-        .bearer_auth(&creds.api_key)
+        .bearer_auth(format!("{}:{}", creds.agent_id, creds.api_key))
         .json(&body)
         .send()
         .await

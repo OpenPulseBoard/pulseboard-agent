@@ -58,7 +58,7 @@ impl PulseBoardTarget {
         let resp = self
             .client
             .post(&url)
-            .bearer_auth(&self.creds.api_key)
+            .bearer_auth(format!("{}:{}", self.creds.agent_id, self.creds.api_key))
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
@@ -89,7 +89,7 @@ impl PulseBoardTarget {
         let resp = self
             .client
             .post(&url)
-            .bearer_auth(&self.creds.api_key)
+            .bearer_auth(format!("{}:{}", self.creds.agent_id, self.creds.api_key))
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
