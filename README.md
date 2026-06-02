@@ -83,6 +83,53 @@ Access `http://localhost:8000` while the agent is running:
 
 ---
 
+## Labels & multi-host
+
+When you deploy more than one agent, every series needs labels that identify *where* it came from — otherwise `node_cpu_seconds_total` from host A and host B collapse into one line on the dashboard.
+
+### What the agent stamps automatically
+
+Every OTLP payload sent to PulseBoard carries these resource attributes, which the edge flattens into Prometheus-style labels on every series:
+
+| Label | Value | Source |
+| --- | --- | --- |
+| `service.name` | `pulseagent` | constant |
+| `agent.version` | crate version | constant |
+| `host.name` | `hostname::get()` | OS hostname, lazy-init once |
+| `instance` | same as `host.name` | mirrors Prom convention so dashboards work out of the box |
+| `agent.id` | enrolled agent ID | stable per-agent identifier from enrollment |
+
+This means `host_metrics` series (CPU, memory, disk, network, load) are automatically multi-host aware — the built-in Library recipes for **Linux Host** and **Docker** will work with zero extra config.
+
+### What you must label yourself: `prom_scrape` targets
+
+The agent does **not** rewrite labels on series it scrapes from third-party exporters. If you scrape `postgres_exporter`, `redis_exporter`, `nginx-prometheus-exporter`, your own app's `/metrics`, etc., you must attach `instance` (and usually `job`) yourself via `extra_labels`:
+
+```toml
+[[sources.prom_scrape.targets]]
+url          = "http://db1.internal:9187/metrics"   # postgres_exporter
+interval     = "15s"
+extra_labels = { job = "postgres", instance = "db1.internal:9187" }
+
+[[sources.prom_scrape.targets]]
+url          = "http://db2.internal:9187/metrics"
+interval     = "15s"
+extra_labels = { job = "postgres", instance = "db2.internal:9187" }
+
+[[sources.prom_scrape.targets]]
+url          = "http://app1.internal:3000/metrics"  # your Node/Go/Python/JVM app
+interval     = "15s"
+extra_labels = { job = "checkout-api", instance = "app1.internal:3000" }
+```
+
+This is the contract every Library recipe (Postgres, Redis, NGINX, Node.js, Go, Python, Java JVM, Docker) assumes. Without distinct `instance` labels, all your replicas show up as a single series.
+
+### Kubernetes / multi-cluster
+
+The Kubernetes recipe slices by `cluster` and `namespace`. The `namespace` label comes from kube-state-metrics for free; the `cluster` label is only present if your federating Prometheus sets `external_labels: { cluster: <name> }`. Single-cluster users will see one entry in the dropdown — harmless.
+
+---
+
 ## CLI reference
 
 ```
