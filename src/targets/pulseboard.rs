@@ -1,11 +1,26 @@
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 use std::time::Duration;
 use tracing::{debug, warn};
 
 use crate::config::PulseBoardTargetConfig;
 use crate::enrollment::AgentCredentials;
 use crate::signal::{LogEntry, MetricKind, MetricSample, Signal};
+
+/// Resolve the machine hostname once per process. Falls back to
+/// "unknown" if the OS lookup fails so we always emit *some* value —
+/// otherwise multiple agents would collapse into a single series.
+fn host_name() -> &'static str {
+    static HOST: OnceLock<String> = OnceLock::new();
+    HOST.get_or_init(|| {
+        hostname::get()
+            .ok()
+            .and_then(|s| s.into_string().ok())
+            .unwrap_or_else(|| "unknown".to_string())
+    })
+    .as_str()
+}
 
 pub struct PulseBoardTarget {
     creds: AgentCredentials,
@@ -52,7 +67,7 @@ impl PulseBoardTarget {
     // ------------------------------------------------------------------
 
     async fn flush_metrics(&self, metrics: Vec<MetricSample>) -> Result<()> {
-        let payload = build_otlp_metrics(&metrics);
+        let payload = build_otlp_metrics(&metrics, &self.creds.agent_id);
         let url = format!("{}/v1/metrics", self.creds.base_url.trim_end_matches('/'));
 
         let resp = self
@@ -111,7 +126,7 @@ impl PulseBoardTarget {
 // OTLP JSON payload builder
 // ---------------------------------------------------------------------------
 
-fn build_otlp_metrics(metrics: &[MetricSample]) -> Value {
+fn build_otlp_metrics(metrics: &[MetricSample], agent_id: &str) -> Value {
     // Group by name+kind to build proper OTLP Metric objects
     use std::collections::HashMap;
 
@@ -165,6 +180,7 @@ fn build_otlp_metrics(metrics: &[MetricSample]) -> Value {
         })
         .collect();
 
+    let host = host_name();
     json!({
         "resourceMetrics": [{
             "resource": {
@@ -174,6 +190,23 @@ fn build_otlp_metrics(metrics: &[MetricSample]) -> Value {
                 }, {
                     "key":   "agent.version",
                     "value": { "stringValue": env!("CARGO_PKG_VERSION") }
+                }, {
+                    // OpenTelemetry semantic convention: machine hostname.
+                    // Becomes the `host_name` label on the stored series and
+                    // lets PromQL slice fleet-wide metrics by host.
+                    "key":   "host.name",
+                    "value": { "stringValue": host }
+                }, {
+                    // Prometheus convention — many existing dashboards key
+                    // off `instance`. Mirror host.name there so the Linux
+                    // Host library dashboard works out of the box.
+                    "key":   "instance",
+                    "value": { "stringValue": host }
+                }, {
+                    // Stable per-agent identity (survives hostname changes
+                    // and disambiguates collisions).
+                    "key":   "agent.id",
+                    "value": { "stringValue": agent_id }
                 }]
             },
             "scopeMetrics": [{
