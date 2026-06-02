@@ -1,6 +1,6 @@
 [package]
 name        = "pulseagent"
-version     = "0.8.0"
+version     = "0.9.0"
 edition     = "2021"
 description = "PulseBoard telemetry agent — zero-config host metrics, logs, and traces"
 license     = "MIT"
