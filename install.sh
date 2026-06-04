@@ -2,7 +2,7 @@
 # install.sh — PulseAgent one-line installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/pulseboard/pulseboard-agent/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/OpenPulseBoard/pulseboard-agent/main/install.sh | bash
 #
 # Or with pre-set values:
 #   PULSEBOARD_URL=https://workspace.pulseboard.cloud \

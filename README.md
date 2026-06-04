@@ -11,7 +11,7 @@
 
 ```bash
 # One-line install (Linux, requires systemd)
-curl -fsSL https://raw.githubusercontent.com/pulseboard/pulseboard-agent/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OpenPulseBoard/pulseboard-agent/main/install.sh | bash
 ```
 
 The installer will prompt for your workspace URL and an enrollment token (generate one at **Settings → Agents → Generate token** in the PulseBoard portal). Within 90 seconds you'll see CPU, memory, disk, network, and load metrics in your dashboard.
