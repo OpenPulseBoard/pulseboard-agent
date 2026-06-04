@@ -155,7 +155,7 @@ jobs:
             bash install.sh
             ```
 
-            See the [README](https://github.com/pulseboard/pulseboard-agent#readme) for Docker, Kubernetes, and manual install instructions.
+            See the [README](https://github.com/OpenPulseBoard/pulseboard-agent#readme) for Docker, Kubernetes, and manual install instructions.
 
             ## Assets
 
