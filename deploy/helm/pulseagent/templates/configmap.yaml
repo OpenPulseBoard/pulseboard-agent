@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pulseagent.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pulseagent.labels" . | nindent 4 }}
+data:
+  agent.toml: |
+    [agent]
+    data_dir  = "/var/lib/pulseagent"
+    log_level = "info"
+
+    {{- if .Values.sources.hostMetrics.enabled }}
+    [sources.host_metrics]
+    interval = {{ .Values.sources.hostMetrics.interval | quote }}
+    {{- end }}
+
+    {{- if .Values.sources.kubernetesPods.enabled }}
+    [sources.kubernetes_pods]
+    log_dir    = {{ .Values.sources.kubernetesPods.logDir | quote }}
+    namespaces = [{{ range $i, $ns := .Values.sources.kubernetesPods.namespaces }}{{ if $i }}, {{ end }}{{ $ns | quote }}{{ end }}]
+    {{- with .Values.extraLabels }}
+    extra_labels = { {{ range $k, $v := . }}{{ $k }} = {{ $v | quote }}, {{ end }} }
+    {{- end }}
+    {{- end }}
+
+    [processors.batch]
+    max_size  = {{ .Values.processors.batch.maxSize }}
+    max_delay = {{ .Values.processors.batch.maxDelay | quote }}
+
+    [processors.cardinality_guard]
+    max_series_per_metric = {{ .Values.processors.cardinalityGuard.maxSeriesPerMetric }}

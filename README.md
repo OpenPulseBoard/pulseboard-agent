@@ -34,6 +34,35 @@ docker run -d \
   ghcr.io/pulseboard/agent
 ```
 
+### Kubernetes
+
+Run one agent per node as a DaemonSet. It tails `/var/log/containers/*.log`
+(CRI format) and collects node host metrics — no API-server permissions required.
+
+**Plain manifest (one-line apply):**
+
+```bash
+kubectl create namespace pulseboard
+kubectl -n pulseboard create secret generic pulseagent-enroll \
+  --from-literal=pulseboard_url="https://acme.pulseboard.cloud" \
+  --from-literal=enroll_token="tok_..."
+kubectl apply -f https://raw.githubusercontent.com/OpenPulseBoard/pulseboard-agent/main/deploy/kubernetes/daemonset.yaml
+```
+
+**Helm:**
+
+```bash
+helm install pulseagent deploy/helm/pulseagent \
+  --namespace pulseboard --create-namespace \
+  --set pulseboard.url=https://acme.pulseboard.cloud \
+  --set pulseboard.enrollToken=tok_... \
+  --set extraLabels.cluster=prod-us-east
+```
+
+See [`deploy/`](deploy/) for the full chart and manifest, including how to bring
+your own secret (`pulseboard.existingSecret`) and scope log collection to
+specific namespaces.
+
 ---
 
 ## Configuration
@@ -56,13 +85,19 @@ See [`agent.example.toml`](agent.example.toml) for the full reference including 
 
 ## Features
 
-### Sources (Wave 1)
+### Sources
 
 | Source | What it collects | Equivalent |
 | --- | --- | --- |
 | `host_metrics` | CPU (per-core + global), memory, disk, network, load average | node\_exporter |
 | `file_logs` | Tail any file or glob; multiline support | Filebeat / promtail |
 | `prom_scrape` | Scrape any Prometheus `/metrics` endpoint | Prometheus |
+| `journald` | Follow the systemd journal (`journalctl --follow`), per-unit + priority filter | journald |
+| `windows_event_log` | Poll Windows Event Log channels via `Get-WinEvent` | winlogbeat |
+| `docker_logs` | Stream container stdout/stderr via the Docker CLI | Docker logging driver |
+| `docker_stats` | Per-container CPU / memory / pids gauges | cAdvisor (subset) |
+| `kubernetes_pods` | Tail `/var/log/containers/*.log` (CRI format) — no API access needed | promtail / Fluent Bit |
+| `otlp` | Receive OTLP/HTTP metrics & logs on a local port | OTel Collector |
 
 ### Processors
 
@@ -70,15 +105,18 @@ See [`agent.example.toml`](agent.example.toml) for the full reference including 
 | --- | --- |
 | `batch` | Accumulate signals and flush on size or time threshold |
 | `relabel` | Prometheus-compatible relabel rules (keep / drop / replace / label\_map) |
+| `transform` | Set / rename / remove labels and lift JSON fields, with `${line}` / `${label.X}` / `${json.X}` templates |
 | `cardinality_guard` | Drop series that exceed a per-metric series budget before they hit the wire |
 | `redact_pii` | Regex-based redaction of log lines and label values |
 
 ### Built-in live debugger
 
-Access `http://localhost:8000` while the agent is running:
+Access `http://localhost:8000` while the agent is running. The debugger is a tabbed UI:
 
-- **Signal Inspector** — live stream of every metric and log flowing through the pipeline, with pre- and post-processor payloads side-by-side.
-- **Source stats** — throughput counters per source.
+- **Signals** — live stream of every metric and log flowing through the pipeline, filterable by kind and name, with per-source throughput counters.
+- **Pipeline** — a live graph of the configured `sources → processors → target` flow, annotated with how many signals each stage passed and dropped.
+- **Linter** — static + live checks on your config: missing target/sources, invalid relabel/redact regexes, metric sources without a cardinality guard, and high-cardinality label names. Live entries appear when an observed metric crosses the cardinality warning threshold.
+- **Why dropped?** — paste a metric name or log substring and see exactly which stage dropped matching signals and the reason (e.g. *"relabel rule 2 (drop): source labels matched the regex"* or *"metric http_requests_total exceeded the configured series budget"*).
 - **Health endpoint** — `GET /api/healthz` for liveness probes.
 
 ---
@@ -177,20 +215,32 @@ pulseboard-agent/
 ├── Cargo.toml
 ├── agent.example.toml   # full annotated config reference
 ├── install.sh           # one-line installer
+├── Dockerfile           # static musl build → distroless image
+├── deploy/
+│   ├── kubernetes/
+│   │   └── daemonset.yaml   # zero-API DaemonSet (kubectl apply)
+│   └── helm/pulseagent/     # Helm chart
 └── src/
     ├── main.rs          # CLI entry point
     ├── config.rs        # TOML config model
     ├── signal.rs        # Signal enum (Metric | Log)
     ├── enrollment.rs    # enroll + checkin
+    ├── lint.rs          # config linter (powers the debugger's Linter tab)
     ├── pipeline.rs      # source → processor → target orchestration
     ├── sources/
     │   ├── host_metrics.rs
     │   ├── file_logs.rs
-    │   └── prom_scrape.rs
+    │   ├── prom_scrape.rs
+    │   ├── journald.rs
+    │   ├── windows_event_log.rs
+    │   ├── docker.rs            # docker_logs + docker_stats
+    │   ├── kubernetes_pods.rs
+    │   └── otlp_receiver.rs
     ├── processors/
     │   ├── batch.rs
     │   ├── cardinality_guard.rs
     │   ├── relabel.rs
+    │   ├── transform.rs
     │   └── redact_pii.rs
     ├── targets/
     │   └── pulseboard.rs   # OTLP JSON + Loki push

@@ -1,0 +1,56 @@
+# Default values for the pulseagent chart.
+
+image:
+  repository: ghcr.io/pulseboard/agent
+  tag: ""          # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# PulseBoard connection. Required.
+pulseboard:
+  url: ""          # e.g. https://acme.pulseboard.cloud
+  enrollToken: ""  # short-lived enrollment token from the portal
+  # If you manage the secret yourself, set existingSecret and leave the
+  # values above empty. The secret must contain keys: pulseboard_url, enroll_token.
+  existingSecret: ""
+
+# Sources toggled on by default for a Kubernetes node.
+sources:
+  hostMetrics:
+    enabled: true
+    interval: "15s"
+  kubernetesPods:
+    enabled: true
+    logDir: "/var/log/containers"
+    namespaces: []          # empty = all namespaces
+
+processors:
+  batch:
+    maxSize: 1000
+    maxDelay: "5s"
+  cardinalityGuard:
+    maxSeriesPerMetric: 2000
+
+# Extra labels stamped on every signal (cluster identity, region, …).
+extraLabels: {}
+  # cluster: prod-us-east
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Tolerate every taint so the DaemonSet covers control-plane nodes too.
+tolerations:
+  - operator: Exists
+
+nodeSelector: {}
+affinity: {}
+
+# Host paths to tail container logs from (CRI / Docker layouts).
+hostPaths:
+  varLogContainers: /var/log/containers
+  varLogPods: /var/log/pods
+  dockerContainers: /var/lib/docker/containers

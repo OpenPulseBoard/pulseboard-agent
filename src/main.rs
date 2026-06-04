@@ -5,6 +5,7 @@ use tracing::info;
 
 mod config;
 mod enrollment;
+mod lint;
 mod pipeline;
 mod processors;
 mod signal;

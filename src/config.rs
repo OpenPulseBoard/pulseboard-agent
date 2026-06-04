@@ -70,8 +70,19 @@ pub struct SourcesConfig {
     pub file_logs: Vec<FileLogsConfig>,
     #[serde(default)]
     pub prom_scrape: Vec<PromScrapeConfig>,
-    /// Stub — OTLP HTTP/JSON receiver on a local port
+    /// In-process OTLP HTTP/JSON receiver on a local port
     pub otlp: Option<OtlpConfig>,
+    /// systemd journal tail (Linux only) — shells out to `journalctl`
+    pub journald: Option<JournaldConfig>,
+    /// Windows Event Log poller (Windows only) — shells out to PowerShell
+    #[serde(default)]
+    pub windows_event_log: Vec<WindowsEventLogConfig>,
+    /// Docker container log collection via the `docker` CLI
+    pub docker_logs: Option<DockerLogsConfig>,
+    /// Docker container resource stats via the `docker` CLI
+    pub docker_stats: Option<DockerStatsConfig>,
+    /// Kubernetes pod logs in DaemonSet mode — tails /var/log/containers/*.log
+    pub kubernetes_pods: Option<KubernetesPodsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +144,90 @@ pub struct OtlpConfig {
     pub port: u16,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct JournaldConfig {
+    /// Optional list of systemd units to follow (e.g. ["ssh.service"]).
+    /// Empty = the whole journal.
+    pub units: Vec<String>,
+    /// Minimum priority (0=emerg … 7=debug). Lines above this are dropped.
+    /// `None` = no filter.
+    pub max_priority: Option<u8>,
+    /// Extra labels applied to every emitted log entry.
+    pub extra_labels: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowsEventLogConfig {
+    pub name: String,
+    /// Channel to read, e.g. "System", "Application", "Security".
+    pub channel: String,
+    /// Poll interval, e.g. "15s".
+    #[serde(default = "default_interval")]
+    pub interval: String,
+    #[serde(default)]
+    pub extra_labels: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DockerLogsConfig {
+    /// Poll interval, e.g. "5s".
+    pub interval: String,
+    /// Only collect logs from containers whose name matches this regex.
+    /// `None` = all running containers.
+    pub name_filter: Option<String>,
+    pub extra_labels: HashMap<String, String>,
+}
+
+impl Default for DockerLogsConfig {
+    fn default() -> Self {
+        Self {
+            interval: "5s".into(),
+            name_filter: None,
+            extra_labels: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DockerStatsConfig {
+    /// Poll interval, e.g. "15s".
+    pub interval: String,
+    pub extra_labels: HashMap<String, String>,
+}
+
+impl Default for DockerStatsConfig {
+    fn default() -> Self {
+        Self {
+            interval: "15s".into(),
+            extra_labels: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KubernetesPodsConfig {
+    /// Directory holding the per-container log symlinks. The kubelet writes
+    /// these in the standard CRI layout: `<pod>_<namespace>_<container>-<id>.log`.
+    pub log_dir: String,
+    /// Only collect logs from pods in these namespaces. Empty = all.
+    pub namespaces: Vec<String>,
+    pub extra_labels: HashMap<String, String>,
+}
+
+impl Default for KubernetesPodsConfig {
+    fn default() -> Self {
+        Self {
+            log_dir: "/var/log/containers".into(),
+            namespaces: vec![],
+            extra_labels: HashMap::new(),
+        }
+    }
+}
+
 fn default_interval() -> String {
     "15s".into()
 }
@@ -159,6 +254,10 @@ pub struct ProcessorsConfig {
 
     #[serde(default)]
     pub redact_pii: Vec<RedactPiiRule>,
+
+    /// Ordered list of transform operations applied to every signal.
+    #[serde(default)]
+    pub transform: Vec<TransformOp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -215,6 +314,30 @@ pub struct RedactPiiRule {
     pub pattern: String,
     /// Replacement string (default: "[[redacted]]")
     pub replacement: Option<String>,
+}
+
+/// A single transform operation. Operations are applied in order and use a
+/// tiny, predictable template syntax with `${...}` placeholders:
+///
+/// * `${line}`        — the log line (logs only)
+/// * `${name}`        — the metric name (metrics only)
+/// * `${label.NAME}`  — the current value of label `NAME`
+/// * `${json.FIELD}`  — top-level field `FIELD` of the log line parsed as JSON
+///
+/// There is no scripting, no Lua, no JS — just substitution, so resource
+/// usage is bounded and the result is deterministic.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum TransformOp {
+    /// Set (or overwrite) a label from a template.
+    SetLabel { label: String, value: String },
+    /// Remove a label if present.
+    RemoveLabel { label: String },
+    /// Rename a label, preserving its value.
+    RenameLabel { from: String, to: String },
+    /// Parse the log line as JSON and lift the listed top-level fields to
+    /// labels of the same name. No-op for metrics or non-JSON lines.
+    ParseJson { fields: Vec<String> },
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +431,22 @@ fn validate(cfg: &Config) -> Result<()> {
     for ps in &cfg.sources.prom_scrape {
         parse_duration_secs(&ps.interval)
             .with_context(|| format!("prom_scrape {:?}: interval = {:?}", ps.name, ps.interval))?;
+    }
+
+    for we in &cfg.sources.windows_event_log {
+        parse_duration_secs(&we.interval).with_context(|| {
+            format!("windows_event_log {:?}: interval = {:?}", we.name, we.interval)
+        })?;
+    }
+
+    if let Some(dl) = &cfg.sources.docker_logs {
+        parse_duration_secs(&dl.interval)
+            .with_context(|| format!("docker_logs.interval = {:?}", dl.interval))?;
+    }
+
+    if let Some(ds) = &cfg.sources.docker_stats {
+        parse_duration_secs(&ds.interval)
+            .with_context(|| format!("docker_stats.interval = {:?}", ds.interval))?;
     }
 
     Ok(())

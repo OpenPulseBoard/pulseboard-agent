@@ -34,26 +34,47 @@ impl Relabeler {
     }
 
     /// Returns `None` if the signal should be dropped, `Some(signal)` otherwise.
-    pub fn apply(&self, mut signal: Signal) -> Option<Signal> {
+    #[allow(dead_code)]
+    pub fn apply(&self, signal: Signal) -> Option<Signal> {
+        self.apply_traced(signal).ok()
+    }
+
+    /// Like [`apply`], but on a drop returns the (partially-processed) signal
+    /// together with a human-readable reason naming the rule index and action —
+    /// used by the live debugger's "why dropped?" flow.
+    pub fn apply_traced(&self, mut signal: Signal) -> Result<Signal, (Signal, String)> {
         match &mut signal {
-            Signal::Metric(ref mut m) => {
-                for rule in &self.rules {
+            Signal::Metric(m) => {
+                for (i, rule) in self.rules.iter().enumerate() {
                     if !apply_rule(rule, &mut m.labels, &mut m.name) {
-                        return None;
+                        let reason = drop_reason(i, &rule.action);
+                        return Err((signal, reason));
                     }
                 }
             }
-            Signal::Log(ref mut l) => {
+            Signal::Log(l) => {
                 // For logs we apply relabel against the label set only
                 let mut name = String::new();
-                for rule in &self.rules {
+                for (i, rule) in self.rules.iter().enumerate() {
                     if !apply_rule(rule, &mut l.labels, &mut name) {
-                        return None;
+                        let reason = drop_reason(i, &rule.action);
+                        return Err((signal, reason));
                     }
                 }
             }
         }
-        Some(signal)
+        Ok(signal)
+    }
+}
+
+/// Build the "why dropped" reason string for relabel rule `index`.
+fn drop_reason(index: usize, action: &RelabelAction) -> String {
+    match action {
+        RelabelAction::Keep => format!(
+            "relabel rule {index} (keep): source labels did not match the regex"
+        ),
+        RelabelAction::Drop => format!("relabel rule {index} (drop): source labels matched the regex"),
+        other => format!("relabel rule {index} ({other:?}): dropped"),
     }
 }
 

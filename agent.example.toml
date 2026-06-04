@@ -44,6 +44,36 @@ paths = ["/var/log/app/*.log", "/var/log/app/**/*.log"]
 # [sources.otlp]
 # port = 4318
 
+# Follow the systemd journal (Linux). Shells out to `journalctl --follow`.
+# [sources.journald]
+# units        = ["ssh.service", "nginx.service"]  # empty = whole journal
+# max_priority = 6                                   # 0=emerg … 7=debug
+# extra_labels = { role = "edge" }
+
+# Windows Event Log (one block per channel). Uses PowerShell Get-WinEvent.
+# [[sources.windows_event_log]]
+# name     = "system"
+# channel  = "System"
+# interval = "15s"
+# extra_labels = { os = "windows" }
+
+# Docker container logs (host with a Docker socket). Shells out to `docker`.
+# [sources.docker_logs]
+# interval    = "5s"
+# name_filter = ".*"                  # regex over container names
+# extra_labels = { runtime = "docker" }
+
+# Docker container resource stats (cpu / memory / pids).
+# [sources.docker_stats]
+# interval = "15s"
+
+# Kubernetes pod logs — DaemonSet mode, tails /var/log/containers/*.log.
+# No API server access required.
+# [sources.kubernetes_pods]
+# log_dir    = "/var/log/containers"
+# namespaces = []                      # empty = all namespaces
+# extra_labels = { cluster = "prod-us-east" }
+
 # ---------------------------------------------------------------------------
 # Processors
 # ---------------------------------------------------------------------------
@@ -66,6 +96,33 @@ max_series_per_metric = 2000
 # [[processors.redact_pii]]
 # field   = "line"
 # pattern = "[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"
+
+# Transform — mutate labels and lift structured fields (optional).
+# Each block is an ordered operation selected by `op`.
+# Templates support ${line}, ${name}, ${label.NAME} and ${json.FIELD}.
+#
+# [[processors.transform]]
+# op    = "set_label"
+# label = "env"
+# value = "prod"
+#
+# [[processors.transform]]
+# op    = "set_label"
+# label = "level"
+# value = "${json.severity}"     # parse the log line as JSON and lift a field
+#
+# [[processors.transform]]
+# op   = "rename_label"
+# from = "k8s_namespace"
+# to   = "namespace"
+#
+# [[processors.transform]]
+# op    = "remove_label"
+# label = "container_id"
+#
+# [[processors.transform]]
+# op     = "parse_json"
+# fields = ["msg", "level", "trace_id"]   # lift these JSON keys into labels
 
 # ---------------------------------------------------------------------------
 # Target

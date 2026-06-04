@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "pulseagent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pulseagent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "pulseagent.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "pulseagent.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "pulseagent.fullname" . }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: pulseagent
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/pulseagent/agent.toml"]
+          env:
+            - name: PULSEBOARD_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pulseagent.secretName" . }}
+                  key: pulseboard_url
+            - name: ENROLL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pulseagent.secretName" . }}
+                  key: enroll_token
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            - name: debug-ui
+              containerPort: 8000
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pulseagent
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/pulseagent
+            - name: varlogcontainers
+              mountPath: {{ .Values.hostPaths.varLogContainers }}
+              readOnly: true
+            - name: varlogpods
+              mountPath: {{ .Values.hostPaths.varLogPods }}
+              readOnly: true
+            - name: dockercontainers
+              mountPath: {{ .Values.hostPaths.dockerContainers }}
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "pulseagent.fullname" . }}-config
+        - name: data
+          emptyDir: {}
+        - name: varlogcontainers
+          hostPath:
+            path: {{ .Values.hostPaths.varLogContainers }}
+        - name: varlogpods
+          hostPath:
+            path: {{ .Values.hostPaths.varLogPods }}
+        - name: dockercontainers
+          hostPath:
+            path: {{ .Values.hostPaths.dockerContainers }}

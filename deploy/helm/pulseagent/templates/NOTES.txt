@@ -1,0 +1,22 @@
+PulseAgent is now rolling out as a DaemonSet in namespace "{{ .Release.Namespace }}".
+
+1. Watch the pods come up (one per node):
+
+     kubectl -n {{ .Release.Namespace }} rollout status ds/{{ include "pulseagent.fullname" . }}
+
+2. Tail the agent's own logs:
+
+     kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/name={{ include "pulseagent.name" . }} -f
+
+3. Open the built-in live debugger for a pod (pipeline graph, linter, why-dropped):
+
+     POD=$(kubectl -n {{ .Release.Namespace }} get pod -l app.kubernetes.io/name={{ include "pulseagent.name" . }} -o jsonpath='{.items[0].metadata.name}')
+     kubectl -n {{ .Release.Namespace }} port-forward "$POD" 8000:8000
+     # then browse http://localhost:8000
+
+{{- if not .Values.pulseboard.existingSecret }}
+{{- if not .Values.pulseboard.url }}
+
+WARNING: pulseboard.url is empty — set --set pulseboard.url=... and pulseboard.enrollToken=...
+{{- end }}
+{{- end }}

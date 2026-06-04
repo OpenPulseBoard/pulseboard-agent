@@ -1,0 +1,142 @@
+# PulseAgent — Kubernetes DaemonSet (zero-API, log-tailing mode)
+#
+# One-line install:
+#   kubectl create namespace pulseboard
+#   kubectl -n pulseboard create secret generic pulseagent-enroll \
+#       --from-literal=pulseboard_url="https://acme.pulseboard.cloud" \
+#       --from-literal=enroll_token="tok_..."
+#   kubectl apply -f https://raw.githubusercontent.com/OpenPulseBoard/pulseboard-agent/main/deploy/kubernetes/daemonset.yaml
+#
+# The agent runs one pod per node, tails /var/log/containers/*.log (CRI format)
+# and ships container logs + node host metrics to PulseBoard. No API server
+# permissions are required for log collection.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pulseagent
+  namespace: pulseboard
+  labels:
+    app.kubernetes.io/name: pulseagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pulseagent-config
+  namespace: pulseboard
+  labels:
+    app.kubernetes.io/name: pulseagent
+data:
+  agent.toml: |
+    [agent]
+    data_dir  = "/var/lib/pulseagent"
+    log_level = "info"
+    # pulseboard_url and enroll_token are injected from the secret via env.
+
+    [sources.host_metrics]
+    interval = "15s"
+
+    [sources.kubernetes_pods]
+    log_dir    = "/var/log/containers"
+    namespaces = []
+
+    [processors.batch]
+    max_size  = 1000
+    max_delay = "5s"
+
+    [processors.cardinality_guard]
+    max_series_per_metric = 2000
+
+    [[processors.transform]]
+    op    = "set_label"
+    label = "k8s_node"
+    value = "${label.host}"
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: pulseagent
+  namespace: pulseboard
+  labels:
+    app.kubernetes.io/name: pulseagent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pulseagent
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pulseagent
+    spec:
+      serviceAccountName: pulseagent
+      # Tolerate control-plane / tainted nodes so every node is covered.
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: pulseagent
+          image: ghcr.io/pulseboard/agent:latest
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/pulseagent/agent.toml"]
+          env:
+            - name: PULSEBOARD_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pulseagent-enroll
+                  key: pulseboard_url
+            - name: ENROLL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: pulseagent-enroll
+                  key: enroll_token
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            - name: debug-ui
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: false
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pulseagent
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/pulseagent
+            - name: varlogcontainers
+              mountPath: /var/log/containers
+              readOnly: true
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: dockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: pulseagent-config
+        - name: data
+          emptyDir: {}
+        - name: varlogcontainers
+          hostPath:
+            path: /var/log/containers
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+        - name: dockercontainers
+          hostPath:
+            path: /var/lib/docker/containers

@@ -57,6 +57,11 @@ impl CardinalityGuard {
     pub fn series_count(&self, metric_name: &str) -> usize {
         self.series.get(metric_name).map(|e| e.len()).unwrap_or(0)
     }
+
+    /// Configured per-metric series budget (for the live-debugger drop reason).
+    pub fn max_series(&self) -> usize {
+        self.max
+    }
 }
 
 fn fingerprint(labels: &Labels) -> u64 {

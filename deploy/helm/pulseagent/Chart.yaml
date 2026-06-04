@@ -1,0 +1,16 @@
+apiVersion: v2
+name: pulseagent
+description: PulseBoard telemetry agent — node host metrics + Kubernetes pod logs via a zero-API DaemonSet.
+type: application
+version: 0.1.0
+appVersion: "0.9.0"
+home: https://pulseboard.cloud
+sources:
+  - https://github.com/OpenPulseBoard/pulseboard-agent
+keywords:
+  - observability
+  - metrics
+  - logs
+  - opentelemetry
+maintainers:
+  - name: PulseBoard
