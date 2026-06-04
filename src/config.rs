@@ -435,7 +435,10 @@ fn validate(cfg: &Config) -> Result<()> {
 
     for we in &cfg.sources.windows_event_log {
         parse_duration_secs(&we.interval).with_context(|| {
-            format!("windows_event_log {:?}: interval = {:?}", we.name, we.interval)
+            format!(
+                "windows_event_log {:?}: interval = {:?}",
+                we.name, we.interval
+            )
         })?;
     }
 

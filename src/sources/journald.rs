@@ -41,7 +41,10 @@ impl JournaldSource {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                warn!("journald: failed to spawn journalctl: {} — is systemd present?", e);
+                warn!(
+                    "journald: failed to spawn journalctl: {} — is systemd present?",
+                    e
+                );
                 return Ok(());
             }
         };

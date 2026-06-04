@@ -46,8 +46,7 @@ impl KubernetesPodsSource {
                     Some(m) => m,
                     None => continue,
                 };
-                if !self.cfg.namespaces.is_empty()
-                    && !self.cfg.namespaces.contains(&meta.namespace)
+                if !self.cfg.namespaces.is_empty() && !self.cfg.namespaces.contains(&meta.namespace)
                 {
                     continue;
                 }
@@ -170,9 +169,7 @@ mod tests {
 
     #[test]
     fn parses_standard_filename() {
-        let p = PathBuf::from(
-            "/var/log/containers/nginx-abc123_default_nginx-deadbeef0123.log",
-        );
+        let p = PathBuf::from("/var/log/containers/nginx-abc123_default_nginx-deadbeef0123.log");
         let m = parse_filename(&p).unwrap();
         assert_eq!(m.pod, "nginx-abc123");
         assert_eq!(m.namespace, "default");

@@ -39,9 +39,23 @@ impl LintFinding {
 /// Label names that frequently cause cardinality explosions when used as a
 /// metric label. Used to warn before a config ships rather than after the bill.
 const HIGH_CARDINALITY_LABELS: &[&str] = &[
-    "id", "uuid", "user_id", "userid", "request_id", "requestid", "trace_id",
-    "traceid", "span_id", "session", "session_id", "email", "ip", "remote_addr",
-    "path", "url", "token",
+    "id",
+    "uuid",
+    "user_id",
+    "userid",
+    "request_id",
+    "requestid",
+    "trace_id",
+    "traceid",
+    "span_id",
+    "session",
+    "session_id",
+    "email",
+    "ip",
+    "remote_addr",
+    "path",
+    "url",
+    "token",
 ];
 
 fn looks_high_cardinality(label: &str) -> bool {
@@ -80,9 +94,8 @@ pub fn lint(cfg: &Config) -> Vec<LintFinding> {
     }
 
     // --- Cardinality guard recommended for untrusted metric sources ------
-    let metric_sources = s.prom_scrape.len()
-        + usize::from(s.otlp.is_some())
-        + usize::from(s.docker_stats.is_some());
+    let metric_sources =
+        s.prom_scrape.len() + usize::from(s.otlp.is_some()) + usize::from(s.docker_stats.is_some());
     if metric_sources > 0 && cfg.processors.cardinality_guard.is_none() {
         out.push(LintFinding::warn(
             "processors.cardinality_guard",

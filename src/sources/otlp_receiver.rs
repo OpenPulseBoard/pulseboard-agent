@@ -112,7 +112,11 @@ fn otlp_any_value(v: &serde_json::Value) -> Option<String> {
         return Some(b.to_string());
     }
     if let Some(i) = v.get("intValue") {
-        return Some(i.as_str().map(str::to_string).unwrap_or_else(|| i.to_string()));
+        return Some(
+            i.as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| i.to_string()),
+        );
     }
     if let Some(d) = v.get("doubleValue").and_then(|x| x.as_f64()) {
         return Some(d.to_string());
@@ -159,7 +163,12 @@ pub fn parse_otlp_metrics(body: &serde_json::Value) -> Vec<MetricSample> {
 
         let scope_metrics = rm.get("scopeMetrics").and_then(|x| x.as_array());
         for sm in scope_metrics.into_iter().flatten() {
-            for metric in sm.get("metrics").and_then(|x| x.as_array()).into_iter().flatten() {
+            for metric in sm
+                .get("metrics")
+                .and_then(|x| x.as_array())
+                .into_iter()
+                .flatten()
+            {
                 let name = match metric.get("name").and_then(|x| x.as_str()) {
                     Some(n) => n.to_string(),
                     None => continue,
@@ -209,12 +218,19 @@ pub fn parse_otlp_logs(body: &serde_json::Value) -> Vec<LogEntry> {
             &mut resource_labels,
         );
 
-        for sl in rl.get("scopeLogs").and_then(|x| x.as_array()).into_iter().flatten() {
-            for rec in sl.get("logRecords").and_then(|x| x.as_array()).into_iter().flatten() {
-                let line = rec
-                    .get("body")
-                    .and_then(otlp_any_value)
-                    .unwrap_or_default();
+        for sl in rl
+            .get("scopeLogs")
+            .and_then(|x| x.as_array())
+            .into_iter()
+            .flatten()
+        {
+            for rec in sl
+                .get("logRecords")
+                .and_then(|x| x.as_array())
+                .into_iter()
+                .flatten()
+            {
+                let line = rec.get("body").and_then(otlp_any_value).unwrap_or_default();
                 let mut labels = resource_labels.clone();
                 attrs_to_labels(rec.get("attributes"), &mut labels);
                 if let Some(sev) = rec.get("severityText").and_then(|x| x.as_str()) {

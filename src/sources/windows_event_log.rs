@@ -154,10 +154,7 @@ fn parse_events_json(json: &str) -> Result<Vec<WinEvent>> {
 fn parse_ps_date(s: &str) -> Option<i64> {
     if let Some(inner) = s.strip_prefix("/Date(").and_then(|x| x.strip_suffix(")/")) {
         // May include a timezone offset suffix like "+0000".
-        let digits: String = inner
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
+        let digits: String = inner.chars().take_while(|c| c.is_ascii_digit()).collect();
         return digits.parse::<i64>().ok();
     }
     chrono::DateTime::parse_from_rfc3339(s)
@@ -192,7 +189,10 @@ mod tests {
 
     #[test]
     fn parses_ps_date_forms() {
-        assert_eq!(parse_ps_date("/Date(1700000000000)/"), Some(1_700_000_000_000));
+        assert_eq!(
+            parse_ps_date("/Date(1700000000000)/"),
+            Some(1_700_000_000_000)
+        );
         assert_eq!(
             parse_ps_date("2024-01-02T03:04:05Z"),
             chrono::DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z")

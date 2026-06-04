@@ -73,8 +73,16 @@ async fn collect_stats() -> Result<Vec<MetricSample>> {
             }
         };
 
-        let name = v.get("Name").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        let id = v.get("ID").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let name = v
+            .get("Name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let id = v
+            .get("ID")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         if name.is_empty() {
             continue;
         }
@@ -90,17 +98,33 @@ async fn collect_stats() -> Result<Vec<MetricSample>> {
             kind: MetricKind::Gauge,
         };
 
-        if let Some(cpu) = v.get("CPUPerc").and_then(|x| x.as_str()).and_then(parse_percent) {
+        if let Some(cpu) = v
+            .get("CPUPerc")
+            .and_then(|x| x.as_str())
+            .and_then(parse_percent)
+        {
             samples.push(mk("container_cpu_usage_percent", cpu, &labels));
         }
-        if let Some(mem) = v.get("MemPerc").and_then(|x| x.as_str()).and_then(parse_percent) {
+        if let Some(mem) = v
+            .get("MemPerc")
+            .and_then(|x| x.as_str())
+            .and_then(parse_percent)
+        {
             samples.push(mk("container_memory_usage_percent", mem, &labels));
         }
-        if let Some((used, limit)) = v.get("MemUsage").and_then(|x| x.as_str()).and_then(parse_mem_usage) {
+        if let Some((used, limit)) = v
+            .get("MemUsage")
+            .and_then(|x| x.as_str())
+            .and_then(parse_mem_usage)
+        {
             samples.push(mk("container_memory_usage_bytes", used, &labels));
             samples.push(mk("container_spec_memory_limit_bytes", limit, &labels));
         }
-        if let Some(pids) = v.get("PIDs").and_then(|x| x.as_str()).and_then(|s| s.trim().parse::<f64>().ok()) {
+        if let Some(pids) = v
+            .get("PIDs")
+            .and_then(|x| x.as_str())
+            .and_then(|s| s.trim().parse::<f64>().ok())
+        {
             samples.push(mk("container_pids", pids, &labels));
         }
     }
@@ -191,7 +215,8 @@ impl DockerLogsSource {
                             }
                             cursors.insert(id.clone(), ts_rfc3339.clone());
 
-                            let entry = make_log(&ts_rfc3339, &message, &id, &name, &self.cfg.extra_labels);
+                            let entry =
+                                make_log(&ts_rfc3339, &message, &id, &name, &self.cfg.extra_labels);
                             inspector.record_source("docker_logs", "log");
                             if tx.send(Signal::Log(entry)).await.is_err() {
                                 return Ok(());

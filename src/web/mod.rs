@@ -154,13 +154,21 @@ impl Inspector {
     /// Record that a signal passed a given pipeline stage.
     pub fn record_stage_pass(&self, stage: &str) {
         let mut state = self.0.lock().unwrap();
-        state.stage_stats.entry(stage.to_string()).or_default().passed += 1;
+        state
+            .stage_stats
+            .entry(stage.to_string())
+            .or_default()
+            .passed += 1;
     }
 
     /// Record that a signal was dropped at `stage` for `reason`.
     pub fn record_drop(&self, signal: &Signal, stage: &str, reason: &str) {
         let mut state = self.0.lock().unwrap();
-        state.stage_stats.entry(stage.to_string()).or_default().dropped += 1;
+        state
+            .stage_stats
+            .entry(stage.to_string())
+            .or_default()
+            .dropped += 1;
 
         let (kind, name, labels, ts_ms) = match signal {
             Signal::Metric(m) => (
@@ -230,11 +238,7 @@ impl Inspector {
             .drops
             .iter()
             .rev()
-            .filter(|d| {
-                name_filter
-                    .map(|n| d.name.contains(n))
-                    .unwrap_or(true)
-            })
+            .filter(|d| name_filter.map(|n| d.name.contains(n)).unwrap_or(true))
             .take(100)
             .cloned()
             .collect()
@@ -272,7 +276,6 @@ fn fingerprint(labels: &Labels) -> u64 {
     std::hash::Hasher::finish(&h)
 }
 
-
 // ---------------------------------------------------------------------------
 // Axum web server
 // ---------------------------------------------------------------------------
@@ -302,9 +305,7 @@ async fn events_handler(State(insp): State<Inspector>) -> Json<Vec<InspectorEven
     Json(insp.get_events())
 }
 
-async fn sources_handler(
-    State(insp): State<Inspector>,
-) -> Json<HashMap<String, SourceStat>> {
+async fn sources_handler(State(insp): State<Inspector>) -> Json<HashMap<String, SourceStat>> {
     Json(insp.get_source_stats())
 }
 

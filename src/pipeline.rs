@@ -112,7 +112,10 @@ pub async fn run(
         let tx2 = tx.clone();
         let we_cfg = we_cfg.clone();
         let insp = inspector.clone();
-        info!("source: windows_event_log {:?} ({})", we_cfg.name, we_cfg.channel);
+        info!(
+            "source: windows_event_log {:?} ({})",
+            we_cfg.name, we_cfg.channel
+        );
         source_nodes.push(node(
             &format!("source:{}", we_cfg.name),
             "source",
@@ -409,4 +412,3 @@ fn build_topology(
     nodes.push(target);
     Topology { nodes, edges }
 }
-

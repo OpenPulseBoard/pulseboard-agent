@@ -70,10 +70,12 @@ impl Relabeler {
 /// Build the "why dropped" reason string for relabel rule `index`.
 fn drop_reason(index: usize, action: &RelabelAction) -> String {
     match action {
-        RelabelAction::Keep => format!(
-            "relabel rule {index} (keep): source labels did not match the regex"
-        ),
-        RelabelAction::Drop => format!("relabel rule {index} (drop): source labels matched the regex"),
+        RelabelAction::Keep => {
+            format!("relabel rule {index} (keep): source labels did not match the regex")
+        }
+        RelabelAction::Drop => {
+            format!("relabel rule {index} (drop): source labels matched the regex")
+        }
         other => format!("relabel rule {index} ({other:?}): dropped"),
     }
 }

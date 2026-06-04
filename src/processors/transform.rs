@@ -151,7 +151,10 @@ mod tests {
     fn metric(name: &str, labels: &[(&str, &str)]) -> Signal {
         Signal::Metric(MetricSample {
             name: name.into(),
-            labels: labels.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            labels: labels
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             value: 1.0,
             timestamp_ms: 0,
             kind: MetricKind::Gauge,
