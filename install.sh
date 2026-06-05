@@ -16,7 +16,7 @@ INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/pulseagent}"
 DATA_DIR="${DATA_DIR:-/var/lib/pulseagent}"
 SYSTEMD_DIR="/etc/systemd/system"
-GITHUB_REPO="pulseboard/pulseboard-agent"
+GITHUB_REPO="OpenPulseBoard/pulseboard-agent"
 
 BOLD="\033[1m"
 GREEN="\033[0;32m"
