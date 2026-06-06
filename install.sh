@@ -161,6 +161,12 @@ EOF
         useradd --system --no-create-home --shell /sbin/nologin pulseagent 2>/dev/null || true
     fi
 
+    # Grant access to the journal where supported so [sources.journald]
+    # can read entries as an unprivileged service account.
+    if getent group systemd-journal >/dev/null 2>&1; then
+        usermod -aG systemd-journal pulseagent 2>/dev/null || true
+    fi
+
     mkdir -p "$DATA_DIR"
     chown pulseagent:pulseagent "$DATA_DIR" 2>/dev/null || true
 
