@@ -36,7 +36,7 @@ impl JournaldSource {
         for unit in &self.cfg.units {
             cmd.arg("--unit").arg(unit);
         }
-        cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -56,6 +56,29 @@ impl JournaldSource {
                 return Ok(());
             }
         };
+
+        // Surface journalctl diagnostics (permission denied, bad arguments,
+        // unavailable journal, etc.) so failures are visible to operators.
+        let stderr_task = child.stderr.take().map(|stderr| {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                loop {
+                    match lines.next_line().await {
+                        Ok(Some(line)) => {
+                            let line = line.trim();
+                            if !line.is_empty() {
+                                warn!("journald: journalctl stderr: {}", line);
+                            }
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            warn!("journald: failed reading journalctl stderr: {}", e);
+                            break;
+                        }
+                    }
+                }
+            })
+        });
 
         let mut lines = BufReader::new(stdout).lines();
         loop {
@@ -81,7 +104,21 @@ impl JournaldSource {
             }
         }
 
-        let _ = child.kill().await;
+        match child.wait().await {
+            Ok(status) => {
+                if !status.success() {
+                    warn!("journald: journalctl exited with status {}", status);
+                } else {
+                    debug!("journald: journalctl exited cleanly");
+                }
+            }
+            Err(e) => warn!("journald: failed waiting on journalctl: {}", e),
+        }
+
+        if let Some(t) = stderr_task {
+            let _ = t.await;
+        }
+
         Ok(())
     }
 }
