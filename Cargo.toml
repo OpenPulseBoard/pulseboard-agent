@@ -56,6 +56,17 @@ prometheus-parse = "0.2"
 # Glob for file_logs path expansion
 glob = "0.3"
 
+# Native Windows APIs for host metrics — disk I/O via DeviceIoControl and
+# per-CPU times via NtQuerySystemInformation (ntdll). Lets the agent collect
+# the same node_exporter-compatible counters as Linux without shelling out.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Ioctl",
+    "Win32_System_IO",
+] }
+
 [dev-dependencies]
 tokio-test = "0.4"
 

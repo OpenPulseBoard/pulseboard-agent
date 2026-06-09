@@ -73,8 +73,9 @@ impl HostMetricsSource {
 // ---------------------------------------------------------------------------
 // CPU — emits node_exporter-compatible `node_cpu_seconds_total{cpu,mode}`
 // (counter). On Linux the cumulative jiffies are read from /proc/stat. On
-// other platforms a synthetic counter is accumulated from sysinfo's
-// percentage gauge across `idle` and `user` modes only.
+// Windows the per-CPU 100ns time counters are read via NtQuerySystemInformation
+// (idle/user/system modes). On any other platform a synthetic counter is
+// accumulated from sysinfo's percentage gauge across `idle` and `user` only.
 // ---------------------------------------------------------------------------
 
 fn collect_cpu(
@@ -89,7 +90,110 @@ fn collect_cpu(
             return samples;
         }
     }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(samples) = collect_cpu_windows(sys.cpus().len(), ts, extra) {
+            return samples;
+        }
+    }
     accum.collect_from_sysinfo(sys, ts, extra)
+}
+
+// Per-CPU cumulative processor times on Windows, read directly from the kernel
+// via NtQuerySystemInformation(SystemProcessorPerformanceInformation). All time
+// fields are cumulative in 100-nanosecond units. KernelTime *includes* IdleTime,
+// so the "system" mode is KernelTime - IdleTime. Returns `None` (falling back to
+// the sysinfo accumulator) if the syscall fails, e.g. on >64-CPU machines that
+// span multiple processor groups.
+#[cfg(target_os = "windows")]
+fn collect_cpu_windows(
+    cpu_count: usize,
+    ts: i64,
+    extra: &HashMap<String, String>,
+) -> Option<Vec<MetricSample>> {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct SystemProcessorPerformanceInformation {
+        idle_time: i64,
+        kernel_time: i64,
+        user_time: i64,
+        dpc_time: i64,
+        interrupt_time: i64,
+        interrupt_count: u32,
+    }
+
+    // SYSTEM_INFORMATION_CLASS::SystemProcessorPerformanceInformation
+    const CLASS_PROCESSOR_PERFORMANCE: u32 = 8;
+    const HUNDRED_NS_PER_SEC: f64 = 10_000_000.0;
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtQuerySystemInformation(
+            system_information_class: u32,
+            system_information: *mut c_void,
+            system_information_length: u32,
+            return_length: *mut u32,
+        ) -> i32; // NTSTATUS (negative = error, 0 = STATUS_SUCCESS)
+    }
+
+    if cpu_count == 0 {
+        return None;
+    }
+
+    let mut buf = vec![
+        SystemProcessorPerformanceInformation {
+            idle_time: 0,
+            kernel_time: 0,
+            user_time: 0,
+            dpc_time: 0,
+            interrupt_time: 0,
+            interrupt_count: 0,
+        };
+        cpu_count
+    ];
+    let mut return_length: u32 = 0;
+    // SAFETY: `buf` holds `cpu_count` entries and `size_of_val` reports its exact
+    // byte length, so the kernel writes at most that many bytes.
+    let status = unsafe {
+        NtQuerySystemInformation(
+            CLASS_PROCESSOR_PERFORMANCE,
+            buf.as_mut_ptr() as *mut c_void,
+            std::mem::size_of_val(buf.as_slice()) as u32,
+            &mut return_length,
+        )
+    };
+    if status != 0 {
+        return None;
+    }
+
+    let entry_size = std::mem::size_of::<SystemProcessorPerformanceInformation>();
+    let n = (return_length as usize) / entry_size;
+    let mut out = Vec::with_capacity(n * 3);
+    for (i, info) in buf.iter().take(n).enumerate() {
+        let idle = info.idle_time as f64 / HUNDRED_NS_PER_SEC;
+        // KernelTime includes IdleTime; isolate genuine kernel/system time.
+        let system = (info.kernel_time - info.idle_time).max(0) as f64 / HUNDRED_NS_PER_SEC;
+        let user = info.user_time as f64 / HUNDRED_NS_PER_SEC;
+        for (mode, value) in [("idle", idle), ("user", user), ("system", system)] {
+            let mut labels = extra.clone();
+            labels.insert("cpu".into(), i.to_string());
+            labels.insert("mode".into(), mode.into());
+            out.push(metric(
+                "node_cpu_seconds_total",
+                labels,
+                value,
+                ts,
+                MetricKind::Counter,
+            ));
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -362,7 +466,110 @@ fn collect_diskio(ts: i64, extra: &HashMap<String, String>) -> Vec<MetricSample>
     out
 }
 
-#[cfg(not(target_os = "linux"))]
+// Disk I/O — node_exporter-compatible counters on Windows, read directly from
+// the kernel. We open each \\.\PhysicalDriveN and issue IOCTL_DISK_PERFORMANCE,
+// which returns a DISK_PERFORMANCE struct of cumulative-since-boot totals
+// (BytesRead/BytesWritten/ReadCount/WriteCount). No admin rights are required:
+// the device is opened with zero access purely for the control code, and the
+// disk performance counters are enabled on-demand by the IOCTL itself.
+#[cfg(target_os = "windows")]
+fn collect_diskio(ts: i64, extra: &HashMap<String, String>) -> Vec<MetricSample> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows_sys::Win32::System::Ioctl::{DISK_PERFORMANCE, IOCTL_DISK_PERFORMANCE};
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+
+    // Probe a generous fixed range of drive numbers; gaps are skipped rather
+    // than treated as the end, since drive indices need not be contiguous.
+    const MAX_PHYSICAL_DRIVES: u32 = 32;
+
+    let mut out = Vec::new();
+    for index in 0..MAX_PHYSICAL_DRIVES {
+        let path = format!(r"\\.\PhysicalDrive{index}");
+        let wide: Vec<u16> = OsStr::new(&path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        // SAFETY: `wide` is a NUL-terminated UTF-16 path; the remaining
+        // arguments are constants / null pointers per the Win32 contract.
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                0, // query only — no read/write access needed for the IOCTL
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                std::ptr::null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            continue; // no drive at this index
+        }
+
+        let mut perf: DISK_PERFORMANCE = unsafe { std::mem::zeroed() };
+        let mut bytes_returned: u32 = 0;
+        // SAFETY: `handle` is valid; the output buffer matches DISK_PERFORMANCE.
+        let ok = unsafe {
+            DeviceIoControl(
+                handle,
+                IOCTL_DISK_PERFORMANCE,
+                std::ptr::null(),
+                0,
+                &mut perf as *mut DISK_PERFORMANCE as *mut _,
+                std::mem::size_of::<DISK_PERFORMANCE>() as u32,
+                &mut bytes_returned,
+                std::ptr::null_mut(),
+            )
+        };
+        // SAFETY: `handle` came from CreateFileW and has not been closed.
+        unsafe { CloseHandle(handle) };
+
+        if ok == 0 {
+            continue;
+        }
+
+        let mut labels = extra.clone();
+        labels.insert("device".into(), format!("PhysicalDrive{index}"));
+
+        out.push(metric(
+            "node_disk_read_bytes_total",
+            labels.clone(),
+            perf.BytesRead as f64,
+            ts,
+            MetricKind::Counter,
+        ));
+        out.push(metric(
+            "node_disk_written_bytes_total",
+            labels.clone(),
+            perf.BytesWritten as f64,
+            ts,
+            MetricKind::Counter,
+        ));
+        out.push(metric(
+            "node_disk_reads_completed_total",
+            labels.clone(),
+            perf.ReadCount as f64,
+            ts,
+            MetricKind::Counter,
+        ));
+        out.push(metric(
+            "node_disk_writes_completed_total",
+            labels.clone(),
+            perf.WriteCount as f64,
+            ts,
+            MetricKind::Counter,
+        ));
+    }
+    out
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 fn collect_diskio(_ts: i64, _extra: &HashMap<String, String>) -> Vec<MetricSample> {
     Vec::new()
 }
@@ -416,6 +623,7 @@ fn collect_network(nets: &Networks, ts: i64, extra: &HashMap<String, String>) ->
 // Load average
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_os = "windows"))]
 fn collect_load(ts: i64, extra: &HashMap<String, String>) -> Vec<MetricSample> {
     let avg = System::load_average();
     let labels = extra.clone();
@@ -436,6 +644,13 @@ fn collect_load(ts: i64, extra: &HashMap<String, String>) -> Vec<MetricSample> {
             MetricKind::Gauge,
         ),
     ]
+}
+
+// Windows has no Unix-style load average; sysinfo reports zeros there, so we
+// skip the collector entirely rather than emit misleading constant metrics.
+#[cfg(target_os = "windows")]
+fn collect_load(_ts: i64, _extra: &HashMap<String, String>) -> Vec<MetricSample> {
+    Vec::new()
 }
 
 // ---------------------------------------------------------------------------

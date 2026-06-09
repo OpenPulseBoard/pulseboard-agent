@@ -44,6 +44,11 @@ jobs:
             os: macos-latest       # Apple Silicon runner (macos-14+)
             use_cross: false
 
+          # Windows — native MSVC build on the Windows runner
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            use_cross: false
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,6 +67,7 @@ jobs:
           key: release-${{ matrix.target }}
 
       - name: Verify lockfile
+        shell: bash
         run: cargo metadata --locked --format-version 1 > /dev/null
 
       # cross is the easiest way to produce musl binaries on a standard
@@ -82,14 +88,26 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       # Produce pulseagent-{target}.tar.gz  — the exact filename that
-      # install.sh downloads from the release assets.
-      - name: Package
+      # install.sh downloads from the release assets (Unix targets).
+      - name: Package (tar.gz)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           BIN="target/${{ matrix.target }}/release/pulseagent"
           ARCHIVE="pulseagent-${{ matrix.target }}.tar.gz"
           tar czf "$ARCHIVE" -C "$(dirname "$BIN")" "$(basename "$BIN")"
           echo "archive=$ARCHIVE" >> "$GITHUB_ENV"
+
+      # Produce pulseagent-{target}.zip — the filename that install.ps1
+      # downloads from the release assets (Windows target).
+      - name: Package (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = "target/${{ matrix.target }}/release/pulseagent.exe"
+          $archive = "pulseagent-${{ matrix.target }}.zip"
+          Compress-Archive -Path $bin -DestinationPath $archive -Force
+          "archive=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -133,7 +151,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum pulseagent-*.tar.gz | tee checksums.sha256
+          sha256sum pulseagent-*.tar.gz pulseagent-*.zip | tee checksums.sha256
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -155,6 +173,12 @@ jobs:
             bash install.sh
             ```
 
+            On Windows (PowerShell, run as Administrator):
+
+            ```powershell
+            irm https://raw.githubusercontent.com/OpenPulseBoard/pulseboard-agent/main/install.ps1 | iex
+            ```
+
             See the [README](https://github.com/OpenPulseBoard/pulseboard-agent#readme) for Docker, Kubernetes, and manual install instructions.
 
             ## Assets
@@ -165,10 +189,12 @@ jobs:
             | `pulseagent-aarch64-unknown-linux-musl.tar.gz` | Linux arm64 (static musl) |
             | `pulseagent-x86_64-apple-darwin.tar.gz` | macOS Intel |
             | `pulseagent-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon |
+            | `pulseagent-x86_64-pc-windows-msvc.zip` | Windows x86-64 |
 
             Verify with `sha256sum -c checksums.sha256`.
           files: |
             dist/pulseagent-*.tar.gz
+            dist/pulseagent-*.zip
             dist/checksums.sha256
           fail_on_unmatched_files: true
           draft: false
