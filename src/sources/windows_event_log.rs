@@ -95,6 +95,7 @@ impl WinEvent {
 
 /// Build a `WinEvent` from a rendered event XML fragment plus an optional
 /// pre-formatted message string.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn parse_event_xml(xml: &str, message: Option<String>) -> WinEvent {
     let provider = extract_attr(xml, "Provider", "Name");
     let id = extract_element(xml, "EventID").and_then(|s| {
@@ -132,6 +133,7 @@ fn parse_event_xml(xml: &str, message: Option<String>) -> WinEvent {
 /// Map a Windows event level number to the display name used by
 /// `LevelDisplayName`. Unknown (publisher-defined) levels fall back to the
 /// raw number so no information is lost.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn level_name(level: u8) -> String {
     match level {
         0 => "Information".into(), // LogAlways
@@ -146,6 +148,7 @@ fn level_name(level: u8) -> String {
 
 /// Extract the value of `attr` from the first `<tag ...>` element. Handles both
 /// single- and double-quoted attribute values.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn extract_attr(xml: &str, tag: &str, attr: &str) -> Option<String> {
     let tag_open = format!("<{tag}");
     let start = xml.find(&tag_open)?;
@@ -166,6 +169,7 @@ fn extract_attr(xml: &str, tag: &str, attr: &str) -> Option<String> {
 }
 
 /// Extract the text content of the first `<tag>...</tag>` element.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn extract_element(xml: &str, tag: &str) -> Option<String> {
     let tag_open = format!("<{tag}");
     let start = xml.find(&tag_open)?;
@@ -177,6 +181,7 @@ fn extract_element(xml: &str, tag: &str) -> Option<String> {
 }
 
 /// Collect the text of every `<Data ...>value</Data>` element under EventData.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn extract_data_values(xml: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cursor = 0;
@@ -313,7 +318,7 @@ mod native {
                 if err == ERROR_NO_MORE_ITEMS {
                     break;
                 }
-                bail!("EvtNext failed (error {})", err);
+                bail!("EvtNext failed (error {err})");
             }
 
             for &raw in batch.iter().take(returned as usize) {
