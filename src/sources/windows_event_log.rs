@@ -333,7 +333,8 @@ mod native {
     /// XML could not be produced.
     fn render_event(event: isize) -> Option<WinEvent> {
         let xml = render_xml(event)?;
-        let message = extract_attr(&xml, "Provider", "Name").and_then(|p| format_message(event, &p));
+        let message =
+            extract_attr(&xml, "Provider", "Name").and_then(|p| format_message(event, &p));
         Some(parse_event_xml(&xml, message))
     }
 
@@ -462,8 +463,10 @@ mod tests {
 
     #[test]
     fn parses_system_fields() {
-        let ev =
-            parse_event_xml(SAMPLE_XML, Some("The service entered the running state.".into()));
+        let ev = parse_event_xml(
+            SAMPLE_XML,
+            Some("The service entered the running state.".into()),
+        );
         assert_eq!(ev.id, Some(7036));
         assert_eq!(ev.provider.as_deref(), Some("Service Control Manager"));
         assert_eq!(ev.level.as_deref(), Some("Information"));
