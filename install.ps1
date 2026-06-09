@@ -151,7 +151,9 @@ max_series_per_metric = 2000
 function Install-Service {
     $exe        = Join-Path $InstallDir "pulseagent.exe"
     $configPath = Join-Path $ConfigDir "agent.toml"
-    $binPath    = "`"$exe`" --config `"$configPath`""
+    # --service makes the binary hand off to the Service Control Manager so it
+    # reports Running/Stopped correctly instead of timing out at start.
+    $binPath    = "`"$exe`" --service --config `"$configPath`""
 
     $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($existing) {
