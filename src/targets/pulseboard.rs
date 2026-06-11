@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 
 use crate::config::PulseBoardTargetConfig;
 use crate::enrollment::AgentCredentials;
-use crate::signal::{LogEntry, MetricKind, MetricSample, Signal};
+use crate::signal::{LogEntry, MetricKind, MetricSample, Signal, TraceBatch};
 
 /// Resolve the machine hostname once per process. Falls back to
 /// "unknown" if the OS lookup fails so we always emit *some* value —
@@ -42,14 +42,17 @@ impl PulseBoardTarget {
     ///
     /// Metrics → OTLP JSON  → POST /v1/metrics
     /// Logs    → Loki push  → POST /loki/api/v1/push
+    /// Traces  → OTLP JSON  → POST /v1/traces
     pub async fn flush(&self, batch: Vec<Signal>) -> Result<()> {
         let mut metrics = vec![];
         let mut logs = vec![];
+        let mut traces = vec![];
 
         for s in batch {
             match s {
                 Signal::Metric(m) => metrics.push(m),
                 Signal::Log(l) => logs.push(l),
+                Signal::Trace(t) => traces.push(t),
             }
         }
 
@@ -58,6 +61,9 @@ impl PulseBoardTarget {
         }
         if !logs.is_empty() {
             self.flush_logs(logs).await?;
+        }
+        if !traces.is_empty() {
+            self.flush_traces(traces).await?;
         }
         Ok(())
     }
@@ -120,6 +126,64 @@ impl PulseBoardTarget {
         }
         Ok(())
     }
+
+    // ------------------------------------------------------------------
+    // Traces → OTLP JSON pass-through
+    // ------------------------------------------------------------------
+
+    async fn flush_traces(&self, traces: Vec<TraceBatch>) -> Result<()> {
+        let payload = merge_trace_batches(traces);
+        let span_count = count_spans(&payload);
+        let url = format!("{}/v1/traces", self.creds.base_url.trim_end_matches('/'));
+
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(format!("{}:{}", self.creds.agent_id, self.creds.api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .with_context(|| format!("POST {url}"))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            warn!("OTLP traces {} from {}: {}", status, url, body);
+        } else {
+            debug!("flushed {} spans → {}", span_count, url);
+        }
+        Ok(())
+    }
+}
+
+/// Concatenate the `resourceSpans` arrays from N received envelopes into a
+/// single OTLP/JSON envelope. Each upstream POST is one OTLP request, so we
+/// avoid the per-batch overhead of N HTTP calls.
+fn merge_trace_batches(batches: Vec<TraceBatch>) -> Value {
+    let mut combined: Vec<Value> = Vec::new();
+    for b in batches {
+        if let Some(arr) = b.payload.get("resourceSpans").and_then(|x| x.as_array()) {
+            combined.extend(arr.iter().cloned());
+        }
+    }
+    json!({ "resourceSpans": combined })
+}
+
+fn count_spans(envelope: &Value) -> usize {
+    let mut n = 0usize;
+    if let Some(rs) = envelope.get("resourceSpans").and_then(|x| x.as_array()) {
+        for r in rs {
+            if let Some(ss) = r.get("scopeSpans").and_then(|x| x.as_array()) {
+                for s in ss {
+                    if let Some(spans) = s.get("spans").and_then(|x| x.as_array()) {
+                        n += spans.len();
+                    }
+                }
+            }
+        }
+    }
+    n
 }
 
 // ---------------------------------------------------------------------------

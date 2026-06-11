@@ -142,6 +142,12 @@ pub struct OtlpConfig {
     /// Port for the OTLP HTTP/JSON receiver (default 4318)
     #[serde(default = "default_otlp_port")]
     pub port: u16,
+
+    /// Forward received OTLP traces upstream to the configured PulseBoard
+    /// workspace (POST /v1/traces). Defaults to true; set to false if the
+    /// agent should only accept-and-drop trace payloads (legacy behaviour).
+    #[serde(default = "default_true")]
+    pub forward_traces: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -234,6 +240,7 @@ fn default_interval() -> String {
 fn default_scrape_interval() -> String {
     "30s".into()
 }
+
 fn default_otlp_port() -> u16 {
     4318
 }

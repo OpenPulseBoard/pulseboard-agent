@@ -21,6 +21,11 @@ impl Transformer {
     }
 
     pub fn apply(&self, mut signal: Signal) -> Signal {
+        // Traces are opaque OTLP envelopes — transform ops only target the
+        // metric/log label models, so skip the whole loop for traces.
+        if matches!(signal, Signal::Trace(_)) {
+            return signal;
+        }
         for op in &self.ops {
             apply_op(op, &mut signal);
         }
@@ -65,6 +70,10 @@ fn labels_mut(signal: &mut Signal) -> &mut Labels {
     match signal {
         Signal::Metric(m) => &mut m.labels,
         Signal::Log(l) => &mut l.labels,
+        // Unreachable: Transformer::apply short-circuits on Trace before
+        // any op handler runs. Kept exhaustive so adding a new Signal
+        // variant is a compile-time prompt.
+        Signal::Trace(_) => unreachable!("transform ops do not run on traces"),
     }
 }
 
@@ -132,6 +141,7 @@ fn resolve_key(
             }
             String::new()
         }
+        Signal::Trace(_) => String::new(),
     }
 }
 

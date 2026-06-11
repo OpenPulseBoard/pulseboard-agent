@@ -84,6 +84,8 @@ impl PiiRedactor {
                 }
                 Signal::Metric(sample)
             }
+            // Trace bodies are opaque OTLP envelopes; redact rules don't apply.
+            other @ Signal::Trace(_) => other,
         }
     }
 }

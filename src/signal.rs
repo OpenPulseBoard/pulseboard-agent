@@ -6,6 +6,23 @@ use std::collections::HashMap;
 pub enum Signal {
     Metric(MetricSample),
     Log(LogEntry),
+    Trace(TraceBatch),
+}
+
+/// Opaque OTLP trace payload received from an upstream exporter.
+///
+/// We do not currently parse spans inside the agent — traces are forwarded
+/// upstream as-is (raw OTLP/JSON body). Holding the parsed `serde_json::Value`
+/// keeps batching cheap while letting the target re-serialise into one combined
+/// request.
+#[derive(Debug, Clone)]
+pub struct TraceBatch {
+    /// Raw OTLP/JSON envelope: `{ "resourceSpans": [...] }`.
+    pub payload: serde_json::Value,
+    /// Number of spans in the batch (best-effort, used for metrics/inspector).
+    pub span_count: usize,
+    /// Receive timestamp in Unix milliseconds.
+    pub received_ms: i64,
 }
 
 /// A single numeric measurement.

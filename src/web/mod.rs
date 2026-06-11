@@ -47,6 +47,7 @@ pub struct InspectorEvent {
 pub struct SourceStat {
     pub metrics: u64,
     pub logs: u64,
+    pub traces: u64,
 }
 
 /// A signal that was dropped by a processor stage, with the reason — powers
@@ -137,6 +138,19 @@ impl Inspector {
                     state.events.pop_front();
                 }
             }
+            Signal::Trace(t) => {
+                let event = InspectorEvent {
+                    kind: "trace".into(),
+                    name: format!("{} spans", t.span_count),
+                    value: Some(t.span_count as f64),
+                    labels: HashMap::new(),
+                    ts_ms: t.received_ms,
+                };
+                state.events.push_back(event);
+                if state.events.len() > MAX_EVENTS {
+                    state.events.pop_front();
+                }
+            }
         }
     }
 
@@ -148,6 +162,9 @@ impl Inspector {
         }
         if kind == "log" {
             stat.logs += 1;
+        }
+        if kind == "trace" {
+            stat.traces += 1;
         }
     }
 
@@ -182,6 +199,12 @@ impl Inspector {
                 l.line.chars().take(80).collect(),
                 l.labels.clone(),
                 l.timestamp_ns / 1_000_000,
+            ),
+            Signal::Trace(t) => (
+                "trace".to_string(),
+                format!("{} spans", t.span_count),
+                HashMap::new(),
+                t.received_ms,
             ),
         };
         state.drops.push_back(DropEvent {

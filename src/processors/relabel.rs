@@ -62,6 +62,9 @@ impl Relabeler {
                     }
                 }
             }
+            Signal::Trace(_) => {
+                // Relabel rules target metric/log label sets; traces pass through.
+            }
         }
         Ok(signal)
     }

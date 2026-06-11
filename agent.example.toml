@@ -43,6 +43,9 @@ paths = ["/var/log/app/*.log", "/var/log/app/**/*.log"]
 # Receive OTLP over HTTP on localhost (optional)
 # [sources.otlp]
 # port = 4318
+# # Forward received OTLP traces upstream to the workspace (POST /v1/traces).
+# # Default: true. Set to false to accept-and-drop trace payloads.
+# forward_traces = true
 
 # Follow the systemd journal (Linux). Shells out to `journalctl --follow`.
 # [sources.journald]

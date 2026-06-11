@@ -5,7 +5,9 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::config::OtlpConfig;
-use crate::signal::{now_ms, now_ns, Labels, LogEntry, MetricKind, MetricSample, Signal};
+use crate::signal::{
+    now_ms, now_ns, Labels, LogEntry, MetricKind, MetricSample, Signal, TraceBatch,
+};
 use crate::web::Inspector;
 
 /// In-process OTLP HTTP/JSON receiver.
@@ -22,6 +24,7 @@ pub struct OtlpReceiverSource {
 struct ReceiverState {
     tx: mpsc::Sender<Signal>,
     inspector: Inspector,
+    forward_traces: bool,
 }
 
 impl OtlpReceiverSource {
@@ -30,7 +33,11 @@ impl OtlpReceiverSource {
     }
 
     pub async fn run(self, tx: mpsc::Sender<Signal>, inspector: Inspector) -> Result<()> {
-        let state = ReceiverState { tx, inspector };
+        let state = ReceiverState {
+            tx,
+            inspector,
+            forward_traces: self.cfg.forward_traces,
+        };
         let app = Router::new()
             .route("/v1/metrics", post(metrics_handler))
             .route("/v1/logs", post(logs_handler))
@@ -79,11 +86,43 @@ async fn logs_handler(
     StatusCode::OK
 }
 
-async fn traces_handler(Json(_body): Json<serde_json::Value>) -> StatusCode {
-    // Trace forwarding is not yet wired into the signal pipeline; accept and
-    // acknowledge so OTLP exporters don't error or retry-storm.
-    debug!("otlp_receiver: received traces payload (not yet forwarded)");
+async fn traces_handler(
+    State(state): State<ReceiverState>,
+    Json(body): Json<serde_json::Value>,
+) -> StatusCode {
+    if !state.forward_traces {
+        debug!("otlp_receiver: traces received but forward_traces=false; dropping");
+        return StatusCode::OK;
+    }
+    let span_count = count_spans(&body);
+    state.inspector.record_source("otlp_receiver", "trace");
+    let batch = TraceBatch {
+        payload: body,
+        span_count,
+        received_ms: now_ms(),
+    };
+    if state.tx.send(Signal::Trace(batch)).await.is_err() {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
     StatusCode::OK
+}
+
+/// Best-effort count of spans inside an OTLP/JSON traces envelope. Used only
+/// for inspector counters; never fails (returns 0 on unexpected shape).
+fn count_spans(body: &serde_json::Value) -> usize {
+    let mut n = 0usize;
+    if let Some(rs) = body.get("resourceSpans").and_then(|x| x.as_array()) {
+        for r in rs {
+            if let Some(ss) = r.get("scopeSpans").and_then(|x| x.as_array()) {
+                for s in ss {
+                    if let Some(spans) = s.get("spans").and_then(|x| x.as_array()) {
+                        n += spans.len();
+                    }
+                }
+            }
+        }
+    }
+    n
 }
 
 // ---------------------------------------------------------------------------
