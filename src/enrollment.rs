@@ -33,10 +33,13 @@ const CREDS_FILE: &str = "credentials.json";
 ///
 /// Logic:
 /// 1. If `data_dir/credentials.json` exists and is readable — return it.
+///    Stale `direct-*` agent ids (from the pre-self-enroll release) are
+///    treated as corrupt so we re-enroll cleanly.
 /// 2. If `agent.enroll_token` is set — exchange it for permanent creds.
-/// 3. If `targets.pulseboard.api_key` is set — use that directly (no
-///    enrollment ceremony; useful for self-hosted workspaces where the
-///    operator already has an API key).
+/// 3. If `targets.pulseboard.api_key` is set — POST it to
+///    `/api/agent/v1/enroll` as a tenant bearer; the workspace mints a
+///    real agent record and returns its permanent (agent_id, api_key)
+///    pair. Idempotent server-side by (tenant, hostname).
 /// 4. Otherwise — warn and return a "local-only" placeholder (dry-run
 ///    or misconfigured; signals will still be collected).
 pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
@@ -44,14 +47,25 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
 
     // 1. Existing creds
     if creds_path.exists() {
-        if let Ok(creds) = load_creds(&creds_path) {
-            debug!("loaded existing credentials from {:?}", creds_path);
-            return Ok(creds);
+        match load_creds(&creds_path) {
+            Ok(creds) if !creds.agent_id.starts_with("direct-") => {
+                debug!("loaded existing credentials from {:?}", creds_path);
+                return Ok(creds);
+            }
+            Ok(_) => {
+                warn!(
+                    "credentials file {:?} carries a stale direct-* agent id \
+                     from the pre-self-enroll release; re-enrolling",
+                    creds_path
+                );
+            }
+            Err(_) => {
+                warn!(
+                    "credentials file {:?} is corrupt — re-enrolling",
+                    creds_path
+                );
+            }
         }
-        warn!(
-            "credentials file {:?} is corrupt — re-enrolling",
-            creds_path
-        );
     }
 
     // 2. Enrollment token exchange
@@ -63,13 +77,18 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
             .or_else(|| cfg.targets.pulseboard.as_ref().and_then(|t| t.url.clone()))
             .context("enroll_token set but no pulseboard_url configured")?;
 
-        let creds = exchange_token(&base_url, token).await?;
+        let creds = enroll(&base_url, Some(token), None).await?;
         persist_creds(&creds_path, &creds)?;
-        info!("enrolled as agent_id={}", creds.agent_id);
+        info!("enrolled via token as agent_id={}", creds.agent_id);
         return Ok(creds);
     }
 
-    // 3. Direct API key (no enrollment round-trip)
+    // 3. Self-enrol via tenant API key. The workspace's
+    //    /api/agent/v1/enroll accepts a tenant `pk_...` bearer as an
+    //    alternative to a single-use token; it mints (or rotates) a
+    //    per-host agent record keyed by hostname and returns permanent
+    //    agent credentials. From then on the agent uses those for
+    //    OTLP / checkin and the tenant key isn't sent again.
     if let Some(target) = &cfg.targets.pulseboard {
         if let Some(api_key) = &target.api_key {
             let base_url = target
@@ -77,13 +96,12 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
                 .clone()
                 .or_else(|| cfg.agent.pulseboard_url.clone())
                 .context("api_key set but no url configured in [targets.pulseboard] or agent.pulseboard_url")?;
-            let creds = AgentCredentials {
-                agent_id: format!("direct-{}", uuid::Uuid::new_v4()),
-                api_key: api_key.clone(),
-                base_url,
-            };
+            let creds = enroll(&base_url, None, Some(api_key)).await?;
             persist_creds(&creds_path, &creds)?;
-            info!("using direct API key (no enrollment)");
+            info!(
+                "self-enrolled via tenant key as agent_id={}",
+                creds.agent_id
+            );
             return Ok(creds);
         }
     }
@@ -100,7 +118,15 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
     })
 }
 
-async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials> {
+/// POST /api/agent/v1/enroll. Exactly one of `token` / `tenant_key` must
+/// be provided. `token` goes in the JSON body (legacy operator-minted
+/// token flow); `tenant_key` is sent as a `Bearer` header (self-enroll
+/// via a long-lived tenant key, e.g. dogfood Fly secrets).
+async fn enroll(
+    base_url: &str,
+    token: Option<&str>,
+    tenant_key: Option<&str>,
+) -> Result<AgentCredentials> {
     let url = format!("{}/api/agent/v1/enroll", base_url.trim_end_matches('/'));
 
     let hostname = hostname::get()
@@ -108,13 +134,20 @@ async fn exchange_token(base_url: &str, token: &str) -> Result<AgentCredentials>
         .to_string_lossy()
         .into_owned();
 
-    let body = serde_json::json!({
-        "token":    token,
+    let mut body = serde_json::json!({
         "hostname": hostname,
         "version":  env!("CARGO_PKG_VERSION"),
     });
+    if let Some(t) = token {
+        body["token"] = serde_json::Value::String(t.to_string());
+    }
 
-    let resp = HTTP.post(&url).json(&body).send().await.with_context(|| {
+    let mut req = HTTP.post(&url).json(&body);
+    if let Some(key) = tenant_key {
+        req = req.bearer_auth(key);
+    }
+
+    let resp = req.send().await.with_context(|| {
         format!(
             "POST {url} — check that pulseboard_url starts with https:// \
             and the host is reachable"
