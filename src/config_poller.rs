@@ -189,6 +189,20 @@ async fn poll_once(
         return Ok(Outcome::Unchanged);
     }
 
+    // First-contact no-op: the agent boots with `AppliedVersion = 0` and
+    // every tenant has an auto-materialised empty `default` group at
+    // version 1. Treating that as "new" would force a pointless reload
+    // on every fresh start. If there's no overlay to apply and the
+    // agent isn't assigned to a custom group, just record the version
+    // and keep the base config in place.
+    if current == 0
+        && payload.overlay_toml.trim().is_empty()
+        && payload.group_id == "default"
+    {
+        applied.set(payload.version).await;
+        return Ok(Outcome::Unchanged);
+    }
+
     let base = std::fs::read_to_string(base_path)
         .with_context(|| format!("read base config {base_path:?}"))?;
     let merged = merge(&base, &payload.overlay_toml)?;
