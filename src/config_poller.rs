@@ -195,10 +195,7 @@ async fn poll_once(
     // on every fresh start. If there's no overlay to apply and the
     // agent isn't assigned to a custom group, just record the version
     // and keep the base config in place.
-    if current == 0
-        && payload.overlay_toml.trim().is_empty()
-        && payload.group_id == "default"
-    {
+    if current == 0 && payload.overlay_toml.trim().is_empty() && payload.group_id == "default" {
         applied.set(payload.version).await;
         return Ok(Outcome::Unchanged);
     }
