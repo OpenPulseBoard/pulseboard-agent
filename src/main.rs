@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tracing::info;
 
 mod config;
+mod config_poller;
 mod enrollment;
 mod lint;
 mod pipeline;
@@ -150,8 +151,94 @@ async fn run_agent(cli: Cli) -> Result<()> {
     });
     info!("debug UI listening on http://127.0.0.1:{}", ui_port);
 
-    // Build and run the pipeline
-    pipeline::run(cfg, creds, inspector, cli.dry_run).await
+    // Phase 13.5: poll the edge for the desired-config overlay. The
+    // poller writes the merged TOML to an "effective" path next to the
+    // operator's agent.toml; that's what each pipeline build loads.
+    let base_config_path = cli.config.clone();
+    let effective_config_path = effective_config_path(&base_config_path);
+    let applied_version = config_poller::AppliedVersion::new();
+    let (reload_tx, mut reload_rx) = tokio::sync::mpsc::channel::<()>(8);
+
+    {
+        let creds = creds.clone();
+        let applied = applied_version.clone();
+        let base = base_config_path.clone();
+        let eff = effective_config_path.clone();
+        tokio::spawn(async move {
+            config_poller::run(creds, base, eff, applied, reload_tx).await;
+        });
+    }
+
+    // Outer loop: build and run the pipeline; when the poller signals
+    // a new version, drain gracefully and rebuild on the next iteration.
+    loop {
+        // Always re-read the (possibly overlay-merged) config so the new
+        // pipeline picks up the freshly-written settings.
+        let active_cfg = load_active_config(&base_config_path, &effective_config_path)?;
+
+        // One-shot per-iteration reload signal. We don't keep the
+        // poller's mpsc directly here so the next pipeline build always
+        // starts with a fresh, empty channel.
+        let (inner_tx, inner_rx) = tokio::sync::mpsc::channel::<()>(1);
+        let forward = tokio::spawn(async move {
+            if reload_rx.recv().await.is_some() {
+                let _ = inner_tx.send(()).await;
+            }
+            reload_rx
+        });
+
+        let result = pipeline::run(
+            active_cfg,
+            creds.clone(),
+            inspector.clone(),
+            cli.dry_run,
+            applied_version.clone(),
+            inner_rx,
+        )
+        .await;
+
+        // Recover the original receiver so the next iteration can keep
+        // listening for further reload signals.
+        reload_rx = forward.await.expect("forward task panicked");
+
+        match result {
+            Ok(()) => {
+                info!("pipeline stopped; rebuilding");
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Where to write the overlay-merged "effective" config: the base path
+/// with `.effective.toml` appended, e.g.
+/// `/etc/pulseagent/agent.toml` -> `/etc/pulseagent/agent.effective.toml`.
+fn effective_config_path(base: &std::path::Path) -> PathBuf {
+    let mut p = base.to_path_buf();
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "agent".to_string());
+    p.set_file_name(format!("{stem}.effective.toml"));
+    p
+}
+
+fn load_active_config(
+    base: &std::path::Path,
+    effective: &std::path::Path,
+) -> Result<config::Config> {
+    if effective.exists() {
+        match config::load(effective) {
+            Ok(c) => return Ok(c),
+            Err(e) => tracing::warn!(
+                "failed to load effective config {:?}: {:#}; falling back to base",
+                effective,
+                e
+            ),
+        }
+    }
+    config::load(base)
 }
 
 // ---------------------------------------------------------------------------

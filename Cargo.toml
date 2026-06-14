@@ -56,6 +56,12 @@ prometheus-parse = "0.2"
 # Glob for file_logs path expansion
 glob = "0.3"
 
+# HMAC-SHA256 + base64 — used by config_poller to verify the desired-
+# config payload from the edge before applying it.
+hmac   = "0.12"
+sha2   = "0.10"
+base64 = "0.22"
+
 # Native Windows APIs for host metrics — disk I/O via DeviceIoControl,
 # per-CPU times via NtQuerySystemInformation (ntdll), and the Event Log via
 # the wevtapi EvtQuery family. Lets the agent collect the same

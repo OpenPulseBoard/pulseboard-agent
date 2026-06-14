@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::config::{parse_duration_secs, Config};
+use crate::config_poller::AppliedVersion;
 use crate::enrollment::{checkin, AgentCredentials};
 use crate::processors::{
     batch::BatchProcessor, cardinality_guard::CardinalityGuard, redact_pii::PiiRedactor,
@@ -37,6 +38,8 @@ pub async fn run(
     creds: AgentCredentials,
     inspector: Inspector,
     dry_run: bool,
+    applied_version: Arc<AppliedVersion>,
+    mut reload_rx: mpsc::Receiver<()>,
 ) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<Signal>(CHANNEL_CAPACITY);
     let cfg = Arc::new(cfg);
@@ -231,13 +234,18 @@ pub async fn run(
     // ----- Checkin ticker --------------------------------------------------
 
     let creds_clone = creds.clone();
-    tokio::spawn(async move {
+    let applied_clone = applied_version.clone();
+    let checkin_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         interval.tick().await; // consume the immediate tick
         loop {
             interval.tick().await;
             let stats = serde_json::json!({ "version": env!("CARGO_PKG_VERSION") });
-            if let Err(e) = checkin(&creds_clone, env!("CARGO_PKG_VERSION"), "0", &stats).await {
+            let v = applied_clone.get().await;
+            let cfg_hash = v.to_string();
+            if let Err(e) =
+                checkin(&creds_clone, env!("CARGO_PKG_VERSION"), &cfg_hash, &stats).await
+            {
                 warn!("checkin error: {:#}", e);
             }
         }
@@ -249,7 +257,15 @@ pub async fn run(
     let mut signals_out: u64 = 0;
     let mut signals_drop: u64 = 0;
 
-    while let Some(signal) = rx.recv().await {
+    let reload_requested = loop {
+        let signal = tokio::select! {
+            biased;
+            _ = reload_rx.recv() => break true,
+            maybe = rx.recv() => match maybe {
+                Some(s) => s,
+                None => break false,
+            },
+        };
         signals_in += 1;
 
         // Relabel
@@ -327,7 +343,7 @@ pub async fn run(
                 }
             }
         }
-    }
+    };
 
     // Flush any remaining signals
     if let Some(batch) = batcher.drain() {
@@ -346,6 +362,11 @@ pub async fn run(
     }
 
     info!(signals_in, signals_out, signals_drop, "pipeline finished");
+
+    // Stop the checkin task before returning so the next pipeline
+    // build doesn't end up with two of them.
+    checkin_task.abort();
+    let _ = reload_requested; // currently unused beyond loop control
 
     Ok(())
 }

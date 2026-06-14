@@ -25,6 +25,19 @@ pub struct AgentCredentials {
     pub agent_id: String,
     pub api_key: String,
     pub base_url: String,
+    /// Tenant id this agent belongs to. Required to recompute the
+    /// canonical signing bytes for /api/agent/v1/config. Empty for
+    /// pre-13.5 creds files; the next enrollment refreshes it.
+    #[serde(default)]
+    pub tenant_id: String,
+    /// Currently-assigned agent-group id (server tells us at enroll;
+    /// may change later via the portal). Defaults to "default".
+    #[serde(default)]
+    pub group_id: String,
+    /// Base64-encoded HMAC-SHA256 key shared with the edge for signing
+    /// the config-poll response.
+    #[serde(default)]
+    pub hmac_key_b64: String,
 }
 
 const CREDS_FILE: &str = "credentials.json";
@@ -115,6 +128,9 @@ pub async fn ensure_enrolled(cfg: &Config) -> Result<AgentCredentials> {
         agent_id: "local".into(),
         api_key: String::new(),
         base_url: String::new(),
+        tenant_id: String::new(),
+        group_id: "default".into(),
+        hmac_key_b64: String::new(),
     })
 }
 
@@ -172,6 +188,9 @@ async fn enroll(
             .context("missing apiKey in enroll response")?
             .to_string(),
         base_url: base_url.to_string(),
+        tenant_id: json["tenantId"].as_str().unwrap_or_default().to_string(),
+        group_id: json["groupId"].as_str().unwrap_or("default").to_string(),
+        hmac_key_b64: json["hmacKeyB64"].as_str().unwrap_or_default().to_string(),
     })
 }
 
