@@ -366,6 +366,19 @@ pub async fn run(
     // Stop the checkin task before returning so the next pipeline
     // build doesn't end up with two of them.
     checkin_task.abort();
+
+    // Abort every source task and *await* their join handles so any
+    // resources they own (notably the OTLP receiver's bound TCP port,
+    // file-log inotify watchers, docker sockets, etc.) are fully
+    // released before this function returns. Without this the next
+    // pipeline build races the still-running otlp listener and fails
+    // with "Address in use" on port 4318.
+    for h in &source_handles {
+        h.abort();
+    }
+    for h in source_handles {
+        let _ = h.await;
+    }
     let _ = reload_requested; // currently unused beyond loop control
 
     Ok(())
